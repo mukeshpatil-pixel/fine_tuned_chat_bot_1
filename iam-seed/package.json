@@ -1,0 +1,9 @@
+{
+  "name": "iam-seed",
+  "version": "1.0.0",
+  "main": "seed.js",
+  "dependencies": {
+    "pg": "^8.13.0",
+    "pg-copy-streams": "^6.0.6"
+  }
+}

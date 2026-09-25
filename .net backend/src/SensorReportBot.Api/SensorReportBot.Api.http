@@ -1,0 +1,6 @@
+@SensorReportBot.Api_HostAddress = http://localhost:5168
+
+GET {{SensorReportBot.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

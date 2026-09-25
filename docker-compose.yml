@@ -1,0 +1,100 @@
+services:
+  # ---------------- Ollama (your existing services, unchanged) ----------------
+  ollama:
+    image: ollama/ollama:latest
+    container_name: sensorbot_ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  ollama-pull-model:
+    image: ollama/ollama:latest
+    container_name: sensorbot_ollama_puller
+    depends_on:
+      ollama:
+        condition: service_healthy
+    entrypoint: /bin/sh
+    command:
+      - "-c"
+      - |
+        echo "Pulling Qwen 2.5 Coder 7B model into Ollama..."
+        OLLAMA_HOST=http://ollama:11434 ollama pull qwen2.5-coder:7b
+        echo "Qwen 2.5 Coder 7B model downloaded successfully and ready for inference!"
+    restart: "no"
+
+  # ---------------- Postgres + TimescaleDB ----------------
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: iam-timescaledb
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: iam_user
+      POSTGRES_PASSWORD: iam_pass
+      POSTGRES_DB: iam_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./iam-seed/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h localhost -U iam_user -d iam_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # One-shot job: seeds the DB if it is empty, otherwise exits immediately.
+  seeder:
+    build: ./iam-seed
+    container_name: iam-seeder
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    environment:
+      PGHOST: timescaledb
+      PGPORT: "5432"
+      PGUSER: iam_user
+      PGPASSWORD: iam_pass
+      PGDATABASE: iam_db
+      SAMPLE_MINUTES: "1"
+      MONTHS: "1" 
+
+  # ---------------- Adminer (Web UI for PostgreSQL Database) ----------------
+  adminer:
+    image: adminer:latest
+    container_name: sensorbot_adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+
+  # ---------------- RabbitMQ Message Broker ----------------
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: sensorbot_rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"   # AMQP protocol
+      - "15672:15672" # Management Web Dashboard UI
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  ollama_data:
+    driver: local
+  pgdata:
+  rabbitmq_data:
+    driver: local

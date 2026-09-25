@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SensorReportBot.Domain/SensorReportBot.Domain.csproj" />
+    <Project Path="src/SensorReportBot.Application/SensorReportBot.Application.csproj" />
+    <Project Path="src/SensorReportBot.Infrastructure/SensorReportBot.Infrastructure.csproj" />
+    <Project Path="src/SensorReportBot.Api/SensorReportBot.Api.csproj" />
+  </Folder>
+</Solution>
