@@ -1,14 +1,15 @@
 # Industrial Sensor Telemetry & AI Report Platform
 
-A production-grade, distributed industrial telemetry analytics and automated PDF reporting platform. Features a **100% local, free LLM conversational assistant** powered by Ollama (`qwen2.5:1.5b`), real-time SignalR WebSockets, a RabbitMQ background job queue, and high-performance QuestPDF report generation.
+A production-grade, distributed industrial telemetry analytics and automated PDF reporting platform. Features a **100% local, free LLM conversational assistant** powered by Ollama (`qwen2.5:0.5b`), real-time SignalR WebSockets, a RabbitMQ background job queue, and high-performance QuestPDF report generation.
 
 ---
 
 ## 🌟 Key Features
 
 - **100% Local & Free AI Chatbot**:
-  - Pure LLM-driven intent extraction using **Qwen 2.5 (1.5B)** via Ollama.
+  - Pure LLM-driven intent extraction using **Qwen 2.5 (0.5B)** via Ollama.
   - Zero external API costs, zero cloud dependencies, and 100% data privacy.
+  - Ultra-fast local CPU/GPU inference (~397MB memory footprint) with sub-second token latency.
   - Multi-turn conversational memory with automatic parameter carry-forward.
   - Off-topic guardrails and intelligent history sanitization.
 - **Interactive UI Shelves & Chips**:
@@ -33,7 +34,7 @@ A production-grade, distributed industrial telemetry analytics and automated PDF
 | **Frontend** | React 18, Vite, Lucide Icons, Microsoft SignalR Client, Modern Vanilla CSS |
 | **Backend API** | .NET 9 ASP.NET Core Web API, SignalR Hubs, Background Hosted Services |
 | **PDF Engine** | QuestPDF (SkiaSharp with Linux font rendering support) |
-| **AI Inference** | Ollama Engine running `qwen2.5:1.5b` (Local CPU/GPU inference) |
+| **AI Inference** | Ollama Engine running `qwen2.5:0.5b` (Local CPU/GPU inference) |
 | **Message Queue** | RabbitMQ 3 (AMQP 5672 + Management Dashboard 15672) |
 | **Database** | TimescaleDB (PostgreSQL 16 + Timescale time-series hypertable extension) |
 | **Database Explorer** | Adminer Web UI |
@@ -51,7 +52,7 @@ Run all 8 services in isolated containers with automatic model download and data
 docker compose up --build
 ```
 
-> **Note on First Run**: The `ollama-pull-model` container will automatically pull `qwen2.5:1.5b` (~980MB) into the shared Docker volume. Once the download finishes, the .NET backend and React frontend will start automatically.
+> **Note on First Run**: The `ollama-pull-model` container will automatically pull `qwen2.5:0.5b` (~397MB) into the shared Docker volume. Once the download finishes, the .NET backend and React frontend will start automatically.
 
 To stop the containers:
 ```bash
@@ -71,7 +72,7 @@ docker compose up timescaledb seeder rabbitmq ollama -d
 
 Pull the local AI model (if not already downloaded):
 ```bash
-ollama pull qwen2.5:1.5b
+ollama pull qwen2.5:0.5b
 ```
 
 #### 2. Run .NET 9 Backend

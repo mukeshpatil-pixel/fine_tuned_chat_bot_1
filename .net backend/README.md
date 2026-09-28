@@ -19,7 +19,7 @@ A .NET 8 Web API built using Clean Architecture. The application processes user 
 "Llm": {
   "Endpoint": "http://localhost:11434/v1/chat/completions",
   "ApiKey": "",
-  "Model": "qwen2.5",
+  "Model": "qwen2.5:0.5b",
   "Temperature": 0.0,
   "MaxTokens": 250
 }

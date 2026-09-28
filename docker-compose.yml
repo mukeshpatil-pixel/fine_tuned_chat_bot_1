@@ -80,9 +80,9 @@ services:
     command:
       - "-c"
       - |
-        echo "Pulling Qwen 2.5 (1.5B) model into Ollama for high-speed local inference..."
-        OLLAMA_HOST=http://ollama:11434 ollama pull qwen2.5:1.5b
-        echo "Qwen 2.5 (1.5B) model downloaded successfully and ready for inference!"
+        echo "Pulling Qwen 2.5 (0.5B) model into Ollama for ultra-fast local inference..."
+        OLLAMA_HOST=http://ollama:11434 ollama pull qwen2.5:0.5b
+        echo "Qwen 2.5 (0.5B) model downloaded successfully and ready for inference!"
     restart: "no"
 
   # ---------------- 6. .NET 9 Backend Web API + PDF Generation Worker ----------------
@@ -99,7 +99,7 @@ services:
       - ASPNETCORE_URLS=http://+:5000
       - ConnectionStrings__TimescaleDb=Host=timescaledb;Port=5432;Database=iam_db;Username=iam_user;Password=iam_pass
       - Llm__Endpoint=http://ollama:11434/v1/chat/completions
-      - Llm__Model=qwen2.5:1.5b
+      - Llm__Model=qwen2.5:0.5b
       - Llm__Temperature=0.1
       - Llm__MaxTokens=300
       - RabbitMQ__HostName=rabbitmq
