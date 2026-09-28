@@ -41,7 +41,9 @@ builder.Services.AddCors(options =>
                   if (string.IsNullOrEmpty(origin)) return false;
                   var uri = new Uri(origin);
                   return uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase) ||
-                         uri.Host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase);
+                         uri.Host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase) ||
+                         uri.Host.Equals("[::1]", StringComparison.OrdinalIgnoreCase) ||
+                         uri.Host.Equals("::1", StringComparison.OrdinalIgnoreCase);
               })
               .AllowAnyHeader()
               .AllowAnyMethod()
@@ -61,10 +63,18 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors("AllowReactDev");
+app.UseWebSockets(new WebSocketOptions
+{
+    KeepAliveInterval = TimeSpan.FromSeconds(15)
+});
 app.UseAuthorization();
 
 app.MapControllers();
-app.MapHub<SensorReportBot.Api.Hubs.ChatHub>("/hubs/chat");
+app.MapHub<SensorReportBot.Api.Hubs.ChatHub>("/hubs/chat", options =>
+{
+    options.Transports = Microsoft.AspNetCore.Http.Connections.HttpTransportType.WebSockets | 
+                         Microsoft.AspNetCore.Http.Connections.HttpTransportType.LongPolling;
+}).RequireCors("AllowReactDev");
 app.MapHealthChecks("/health");
 
 app.Run();

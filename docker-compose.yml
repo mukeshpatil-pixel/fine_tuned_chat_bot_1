@@ -111,6 +111,10 @@ services:
       - Cors__AllowedOrigins__1=http://localhost:5174
       - Cors__AllowedOrigins__2=http://localhost:80
       - Cors__AllowedOrigins__3=http://localhost
+      - Cors__AllowedOrigins__4=http://127.0.0.1:5173
+      - Cors__AllowedOrigins__5=http://127.0.0.1:5174
+      - Cors__AllowedOrigins__6=http://127.0.0.1:80
+      - Cors__AllowedOrigins__7=http://127.0.0.1
     volumes:
       - pdf_reports:/app/storage/reports
     depends_on:

@@ -30,7 +30,9 @@ import {
 } from 'lucide-react';
 import './App.css';
 
-const API_BASE_URL = 'http://localhost:5000/api';
+const currentHostname = typeof window !== 'undefined' && window.location ? (window.location.hostname || 'localhost') : 'localhost';
+const API_BASE_URL = `http://${currentHostname}:5000/api`;
+const HUB_URL = `http://${currentHostname}:5000/hubs/chat`;
 
 const SIGNAL_COLORS = ['#4f46e5', '#0284c7', '#059669', '#d97706', '#dc2626', '#8b5cf6', '#ec4899', '#14b8a6'];
 
@@ -128,11 +130,11 @@ function App() {
     if (!sessionId) return;
 
     const connection = new signalR.HubConnectionBuilder()
-      .withUrl(`http://localhost:5000/hubs/chat`, {
-        skipNegotiation: true,
-        transport: signalR.HttpTransportType.WebSockets
+      .withUrl(HUB_URL, {
+        transport: signalR.HttpTransportType.WebSockets | signalR.HttpTransportType.LongPolling
       })
-      .withAutomaticReconnect()
+      .withAutomaticReconnect([0, 2000, 5000, 10000])
+      .configureLogging(signalR.LogLevel.Warning)
       .build();
 
     connection.on("ReceiveChatResponse", (res) => {
