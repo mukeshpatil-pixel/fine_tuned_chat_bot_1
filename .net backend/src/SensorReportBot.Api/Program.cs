@@ -36,15 +36,7 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowReactDev", policy =>
     {
-        policy.SetIsOriginAllowed(origin =>
-              {
-                  if (string.IsNullOrEmpty(origin)) return false;
-                  var uri = new Uri(origin);
-                  return uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase) ||
-                         uri.Host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase) ||
-                         uri.Host.Equals("[::1]", StringComparison.OrdinalIgnoreCase) ||
-                         uri.Host.Equals("::1", StringComparison.OrdinalIgnoreCase);
-              })
+        policy.SetIsOriginAllowed(_ => true)
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
