@@ -953,7 +953,7 @@ function App() {
                       <div className="bubble-text">{m.text}</div>
 
                       {/* Interactive Asset Options Shelf */}
-                      {m.sender === 'assistant' && m.isOnTopic && !m.isComplete && (m.suggestedAction === 'select_asset' || (!m.extractedParameters?.assetId && !m.extractedParameters?.assetName)) && (
+                      {m.sender === 'assistant' && m.isOnTopic && !m.isComplete && m.suggestedAction === 'select_asset' && (
                         <div className="chat-interactive-shelf">
                           <div className="shelf-label">
                             <Zap size={12} />
@@ -979,7 +979,7 @@ function App() {
                       )}
 
                       {/* Interactive Timeframe Options & Calendar Shelf */}
-                      {m.sender === 'assistant' && m.isOnTopic && !m.isComplete && (m.suggestedAction === 'select_timeframe' || (m.extractedParameters?.assetName && !m.extractedParameters?.timeRange && !m.extractedParameters?.fromDate)) && (
+                      {m.sender === 'assistant' && m.isOnTopic && !m.isComplete && m.suggestedAction === 'select_timeframe' && (
                         <div className="chat-interactive-shelf">
                           <div className="shelf-label">
                             <Clock size={12} />
@@ -1078,7 +1078,9 @@ function App() {
                           <div className="params-header">
                             <Zap size={13} className="text-amber" />
                             <span>Report Configuration</span>
-                            {m.isComplete && <span className="complete-tag"><CheckCircle2 size={10} /> READY</span>}
+                            {(m.isComplete || m.suggestedAction === 'confirm_queue' || (m.extractedParameters?.assetName && (m.extractedParameters?.timeRange || m.extractedParameters?.fromDate))) && (
+                              <span className="complete-tag"><CheckCircle2 size={10} /> READY</span>
+                            )}
                           </div>
                           <div className="params-body">
                             {m.extractedParameters.assetName && (
@@ -1103,7 +1105,7 @@ function App() {
                           </div>
 
                           {/* Confirmation Buttons: Yes, Queue or Change Options */}
-                          {m.isComplete && !chatQueuedJobs[m.id] && (
+                          {(m.isComplete || m.suggestedAction === 'confirm_queue' || (m.extractedParameters?.assetName && (m.extractedParameters?.timeRange || m.extractedParameters?.fromDate))) && !chatQueuedJobs[m.id] && (
                             <div className="chat-confirm-actions">
                               <button 
                                 type="button"

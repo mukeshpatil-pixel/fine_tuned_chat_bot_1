@@ -71,14 +71,13 @@ public class IntentExtractionStep : IChatStep
                     return;
                 }
 
-                // Resolve AssetId and official catalog Name from Database if LLM extracted AssetName
+                // 1. Resolve AssetId from database if LLM extracted AssetName
                 if (!string.IsNullOrWhiteSpace(state.ExtractedParameters.AssetName) && (!state.ExtractedParameters.AssetId.HasValue || state.ExtractedParameters.AssetId == 0))
                 {
                     var matchedAsset = assets.FirstOrDefault(a => 
                         a.Name.Equals(state.ExtractedParameters.AssetName, StringComparison.OrdinalIgnoreCase) ||
                         a.Name.Contains(state.ExtractedParameters.AssetName, StringComparison.OrdinalIgnoreCase) ||
-                        state.ExtractedParameters.AssetName.Contains(a.Name, StringComparison.OrdinalIgnoreCase) ||
-                        a.Name.Split(' ').Any(w => w.Length > 3 && state.ExtractedParameters.AssetName.Contains(w, StringComparison.OrdinalIgnoreCase)));
+                        state.ExtractedParameters.AssetName.Contains(a.Name, StringComparison.OrdinalIgnoreCase));
 
                     if (matchedAsset != null)
                     {
@@ -87,44 +86,27 @@ public class IntentExtractionStep : IChatStep
                     }
                 }
 
-                // Safety guard: Ensure isComplete is only true when both Asset and Timeframe are actually resolved
-                if (state.IsComplete)
+                // 2. Dynamic options enrichment from database for asset selection
+                if (state.SuggestedAction == "select_asset")
                 {
-                    bool hasAsset = state.ExtractedParameters.AssetId.HasValue && state.ExtractedParameters.AssetId.Value > 0;
-                    bool hasTime = !string.IsNullOrWhiteSpace(state.ExtractedParameters.TimeRange) || !string.IsNullOrWhiteSpace(state.ExtractedParameters.FromDate);
-                    if (!hasAsset || !hasTime)
-                    {
-                        state.IsComplete = false;
-                    }
+                    state.SuggestedOptions = assets.Select(a => a.Name).ToList();
                 }
 
-                // Dynamic UI Action & Options Enrichment directly from live database catalog
-                if (state.IsOnTopic && !state.IsComplete)
+                // 3. Ensure isComplete is synchronized when configuration is ready or action is confirm_queue
+                if (state.SuggestedAction == "confirm_queue" || 
+                    (state.ExtractedParameters.AssetId.HasValue && state.ExtractedParameters.AssetId > 0 &&
+                     (!string.IsNullOrWhiteSpace(state.ExtractedParameters.TimeRange) || !string.IsNullOrWhiteSpace(state.ExtractedParameters.FromDate))))
                 {
-                    bool hasAsset = state.ExtractedParameters.AssetId.HasValue && state.ExtractedParameters.AssetId.Value > 0;
-                    if (state.SuggestedAction == "select_asset" || !hasAsset)
+                    state.IsComplete = true;
+                    if (string.IsNullOrWhiteSpace(state.SuggestedAction) || state.SuggestedAction == "none")
                     {
-                        state.SuggestedAction = "select_asset";
-                        state.SuggestedOptions = assets.Select(a => a.Name).ToList();
+                        state.SuggestedAction = "confirm_queue";
                     }
-                    else if (state.SuggestedAction == "select_timeframe" || (string.IsNullOrWhiteSpace(state.ExtractedParameters.TimeRange) && string.IsNullOrWhiteSpace(state.ExtractedParameters.FromDate)))
-                    {
-                        state.SuggestedAction = "select_timeframe";
-                        if (state.SuggestedOptions == null || !state.SuggestedOptions.Any())
-                        {
-                            state.SuggestedOptions = new List<string> { "24h", "5d", "14d", "30d" };
-                        }
-                    }
-                }
-                else if (state.IsComplete)
-                {
-                    state.SuggestedAction = "confirm_queue";
-                    state.SuggestedOptions = new List<string> { "Yes, Queue PDF Report", "Change Options" };
                 }
             }
             else
             {
-                // Fallback if LLM API call fails
+                // Graceful fallback only if LLM API request completely fails
                 state.IsOnTopic = true;
                 state.IsComplete = false;
                 state.Reply = "Hi there! I'm your Sensor Report Assistant. Which machine or asset would you like a report for?";
