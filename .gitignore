@@ -116,5 +116,7 @@ docker-compose.override.yml
 # ==========================================
 # Generated PDF reports / Storage
 # ==========================================
+**/storage/**/*.pdf
 **/storage/*.pdf
 **/storage/temp/
+*.zip
