@@ -34,7 +34,7 @@ public class IntentExtractionStep : IChatStep
     {
         try
         {
-            // 1. Fetch available database catalog (Assets) - format compactly to save tokens
+            // 1. Fetch available database catalog (Assets)
             var assets = await _telemetryRepo.GetAssetsAsync(ct);
             string availableAssetsJson = string.Join(" | ", assets.Select(a => $"{a.AssetId}: {a.Name}"));
 
@@ -51,7 +51,7 @@ public class IntentExtractionStep : IChatStep
 
             string userContextMessage = $"[CURRENT UTC TIME]: {currentTimeStr}\n\n[CONVERSATION HISTORY]:\n{historyContext}\n\n[LATEST USER INPUT]:\n{state.UserMessage}";
 
-            // 4. Execute LLM Intent & Reply Generation
+            // 4. 100% LLM Call for every single message
             var result = await _llmService.GenerateJsonResponseAsync<ConversationalChatResultDto>(systemPrompt, userContextMessage, ct);
 
             if (result != null)
@@ -61,13 +61,15 @@ public class IntentExtractionStep : IChatStep
                 state.ExtractedParameters = result.ExtractedParameters ?? new ExtractedReportParametersDto();
                 state.Reply = result.ReplyMessage;
                 state.SuggestedAction = result.SuggestedAction;
-                state.SuggestedOptions = result.SuggestedOptions;
+                state.SuggestedOptions = result.SuggestedOptions ?? new List<string>();
 
                 // If off-topic, ensure reply is set and exit early
                 if (!result.IsOnTopic)
                 {
                     if (string.IsNullOrWhiteSpace(state.Reply))
-                        state.Reply = "Sorry, I can only help with industrial sensor and asset reports.";
+                        state.Reply = "Sorry, I can only assist with industrial sensor and asset reports.";
+                    state.SuggestedAction = "none";
+                    state.SuggestedOptions = new List<string>();
                     return;
                 }
 
@@ -117,7 +119,6 @@ public class IntentExtractionStep : IChatStep
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to execute LLM intent extraction call in IntentExtractionStep");
-            // Keep IsOnTopic = true so the conversation isn't killed; surface a neutral retry message
             state.IsOnTopic = true;
             state.Reply = "I'm having trouble processing your request right now. Could you please try again?";
         }

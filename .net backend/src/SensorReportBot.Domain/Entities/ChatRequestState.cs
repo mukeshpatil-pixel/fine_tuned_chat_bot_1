@@ -29,6 +29,17 @@ public class ExtractedReportParametersDto
     public string? ToDate { get; set; }
 
     public string? Mode { get; set; }
+
+    public ExtractedReportParametersDto Clone() => new()
+    {
+        AssetId = AssetId,
+        AssetName = AssetName,
+        SignalIds = SignalIds == null ? null : new List<int>(SignalIds),
+        TimeRange = TimeRange,
+        FromDate = FromDate,
+        ToDate = ToDate,
+        Mode = Mode
+    };
 }
 
 public class ChatRequestState
@@ -44,4 +55,10 @@ public class ChatRequestState
     // Pipeline Step States
     public IReadOnlyList<ChatMessageEntity>? History { get; set; }
     public ExtractedReportParametersDto? ExtractedParameters { get; set; }
+
+    /// <summary>Report configuration restored from the previous assistant message (server-side source of truth).</summary>
+    public ExtractedReportParametersDto? PreviousParameters { get; set; }
+
+    /// <summary>True when the rule-based step already produced the full reply, so the LLM call is skipped.</summary>
+    public bool IsHandled { get; set; }
 }

@@ -27,7 +27,7 @@ public class LlmService : ILlmService
 
     public async Task<TResponse?> GenerateJsonResponseAsync<TResponse>(string systemPrompt, string userMessage, CancellationToken ct = default)
     {
-        _logger.LogInformation("\n==================== [LLM REQUEST LOG] ====================\n[SYSTEM PROMPT]:\n{SystemPrompt}\n-----------------------------------------------------------\n[USER PROMPT]:\n{UserMessage}\n===========================================================", systemPrompt, userMessage);
+        _logger.LogDebug("\n==================== [LLM REQUEST LOG] ====================\n[SYSTEM PROMPT]:\n{SystemPrompt}\n-----------------------------------------------------------\n[USER PROMPT]:\n{UserMessage}\n===========================================================", systemPrompt, userMessage);
 
         var payload = new
         {
