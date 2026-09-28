@@ -11,12 +11,17 @@ public static class DependencyInjection
     public static IServiceCollection AddApplication(this IServiceCollection services)
     {
         services.AddValidatorsFromAssembly(typeof(DependencyInjection).Assembly);
-        // Sequential Chat Workflow Pipeline Steps
-        // NOTE: GuardStep removed - IntentExtractionStep handles isOnTopic classification
-        // in the same LLM call, eliminating the redundant second call and empty-response errors.
+
+        // Hybrid Sequential Chat Workflow Pipeline:
+        // 1. Load prior conversation history
         services.AddScoped<IChatStep, LoadHistoryStep>();
+        // 2. Save current user message
         services.AddScoped<IChatStep, SaveUserMessageStep>();
+        // 3. Fast-path deterministic resolver for instant (<5ms) button clicks / clear intents
+        services.AddScoped<IChatStep, RuleBasedIntentStep>();
+        // 4. Local LLM (qwen2.5:1.5b) extraction for natural, complex, and conversational messages
         services.AddScoped<IChatStep, IntentExtractionStep>();
+        // 5. Persist assistant reply to database
         services.AddScoped<IChatStep, PersistAssistantReplyStep>();
 
         services.AddScoped<ChatWorkflow>();
