@@ -1,35 +1,5 @@
 services:
-  # ---------------- Ollama (your existing services, unchanged) ----------------
-  ollama:
-    image: ollama/ollama:latest
-    container_name: sensorbot_ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "ollama list || exit 1"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  ollama-pull-model:
-    image: ollama/ollama:latest
-    container_name: sensorbot_ollama_puller
-    depends_on:
-      ollama:
-        condition: service_healthy
-    entrypoint: /bin/sh
-    command:
-      - "-c"
-      - |
-        echo "Pulling Qwen 2.5 (1.5B) model into Ollama for high-speed local inference..."
-        OLLAMA_HOST=http://ollama:11434 ollama pull qwen2.5:1.5b
-        echo "Qwen 2.5 (1.5B) model downloaded successfully and ready for inference!"
-    restart: "no"
-
-  # ---------------- Postgres + TimescaleDB ----------------
+  # ---------------- 1. TimescaleDB (PostgreSQL + Time-Series Engine) ----------------
   timescaledb:
     image: timescale/timescaledb:latest-pg16
     container_name: iam-timescaledb
@@ -49,7 +19,7 @@ services:
       timeout: 5s
       retries: 30
 
-  # One-shot job: seeds the DB if it is empty, otherwise exits immediately.
+  # ---------------- 2. Seeder (Seeds Database Automatically if Empty) ----------------
   seeder:
     build: ./iam-seed
     container_name: iam-seeder
@@ -63,23 +33,15 @@ services:
       PGPASSWORD: iam_pass
       PGDATABASE: iam_db
       SAMPLE_MINUTES: "1"
-      MONTHS: "1" 
+      MONTHS: "1"
 
-  # ---------------- Adminer (Web UI for PostgreSQL Database) ----------------
-  adminer:
-    image: adminer:latest
-    container_name: sensorbot_adminer
-    restart: unless-stopped
-    ports:
-      - "8080:8080"
-
-  # ---------------- RabbitMQ Message Broker ----------------
+  # ---------------- 3. RabbitMQ Message Broker ----------------
   rabbitmq:
     image: rabbitmq:3-management-alpine
     container_name: sensorbot_rabbitmq
     restart: unless-stopped
     ports:
-      - "5672:5672"   # AMQP protocol
+      - "5672:5672"   # AMQP Protocol
       - "15672:15672" # Management Web Dashboard UI
     environment:
       RABBITMQ_DEFAULT_USER: guest
@@ -92,9 +54,99 @@ services:
       timeout: 5s
       retries: 5
 
+  # ---------------- 4. Ollama LLM Inference Engine ----------------
+  ollama:
+    image: ollama/ollama:latest
+    container_name: sensorbot_ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ---------------- 5. Ollama Auto-Model Downloader (One-Shot) ----------------
+  ollama-pull-model:
+    image: ollama/ollama:latest
+    container_name: sensorbot_ollama_puller
+    depends_on:
+      ollama:
+        condition: service_healthy
+    entrypoint: /bin/sh
+    command:
+      - "-c"
+      - |
+        echo "Pulling Qwen 2.5 (1.5B) model into Ollama for high-speed local inference..."
+        OLLAMA_HOST=http://ollama:11434 ollama pull qwen2.5:1.5b
+        echo "Qwen 2.5 (1.5B) model downloaded successfully and ready for inference!"
+    restart: "no"
+
+  # ---------------- 6. .NET 9 Backend Web API + PDF Generation Worker ----------------
+  backend:
+    build:
+      context: ./.net backend
+      dockerfile: Dockerfile
+    container_name: sensorbot_backend
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:5000
+      - ConnectionStrings__TimescaleDb=Host=timescaledb;Port=5432;Database=iam_db;Username=iam_user;Password=iam_pass
+      - Llm__Endpoint=http://ollama:11434/v1/chat/completions
+      - Llm__Model=qwen2.5:1.5b
+      - Llm__Temperature=0.1
+      - Llm__MaxTokens=120
+      - RabbitMQ__HostName=rabbitmq
+      - RabbitMQ__Port=5672
+      - RabbitMQ__UserName=guest
+      - RabbitMQ__Password=guest
+      - RabbitMQ__QueueName=pdf_report_jobs
+      - Cors__AllowedOrigins__0=http://localhost:5173
+      - Cors__AllowedOrigins__1=http://localhost:5174
+      - Cors__AllowedOrigins__2=http://localhost:80
+      - Cors__AllowedOrigins__3=http://localhost
+    volumes:
+      - pdf_reports:/app/storage/reports
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      ollama-pull-model:
+        condition: service_completed_successfully
+
+  # ---------------- 7. React Vite Frontend (Nginx SPA) ----------------
+  frontend:
+    build:
+      context: ./react-frontend
+      dockerfile: Dockerfile
+    container_name: sensorbot_frontend
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
+  # ---------------- 8. Adminer (Web Database Explorer) ----------------
+  adminer:
+    image: adminer:latest
+    container_name: sensorbot_adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+
 volumes:
   ollama_data:
     driver: local
   pgdata:
+    driver: local
   rabbitmq_data:
+    driver: local
+  pdf_reports:
     driver: local
