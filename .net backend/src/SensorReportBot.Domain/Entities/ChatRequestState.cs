@@ -9,6 +9,7 @@ public class ChatMessageEntity
     public string SessionId { get; set; } = string.Empty;
     public string Role { get; set; } = string.Empty; // "user" or "assistant"
     public string Content { get; set; } = string.Empty;
+    public string? Metadata { get; set; }
     public DateTime CreatedAt { get; set; }
 }
 
@@ -37,6 +38,8 @@ public class ChatRequestState
     public bool IsOnTopic { get; set; } = true;
     public bool IsComplete { get; set; } = false;
     public string? Reply { get; set; }
+    public string? SuggestedAction { get; set; } // "select_asset" | "select_timeframe" | "none"
+    public List<string>? SuggestedOptions { get; set; }
 
     // Pipeline Step States
     public IReadOnlyList<ChatMessageEntity>? History { get; set; }

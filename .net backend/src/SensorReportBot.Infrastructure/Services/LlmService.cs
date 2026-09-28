@@ -98,14 +98,21 @@ public class LlmService : ILlmService
             int lastBrace = rawContent.LastIndexOf('}');
             if (firstBrace >= 0 && lastBrace > firstBrace)
             {
-                string repairedJson = rawContent.Substring(firstBrace, lastBrace - firstBrace + 1);
-                return JsonSerializer.Deserialize<TResponse>(repairedJson, new JsonSerializerOptions 
-                { 
-                    PropertyNameCaseInsensitive = true, 
-                    AllowTrailingCommas = true 
-                });
+                try
+                {
+                    string repairedJson = rawContent.Substring(firstBrace, lastBrace - firstBrace + 1);
+                    return JsonSerializer.Deserialize<TResponse>(repairedJson, new JsonSerializerOptions 
+                    { 
+                        PropertyNameCaseInsensitive = true, 
+                        AllowTrailingCommas = true 
+                    });
+                }
+                catch
+                {
+                    return default;
+                }
             }
-            throw;
+            return default;
         }
     }
 

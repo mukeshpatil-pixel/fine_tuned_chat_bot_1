@@ -25,7 +25,8 @@ public class ChatHub : Hub
             
             var result = await _chatService.ProcessChatMessageAsync(sessionId, userMessage);
 
-            // Broadcast back over WebSocket connection to caller
+            // Push the response back over WebSocket to the client who sent the message.
+            // "ReceiveChatResponse" must match the connection.on(...) listener in React.
             await Clients.Caller.SendAsync("ReceiveChatResponse", result);
         }
         catch (Exception ex)

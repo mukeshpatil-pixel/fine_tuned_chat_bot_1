@@ -32,36 +32,24 @@ public class IntentExtractionStep : IChatStep
 
     public async Task RunAsync(ChatRequestState state, CancellationToken ct)
     {
-        // Skip only if a previous step (e.g. SaveUserMessageStep) already set a reply.
-        // We do NOT check IsOnTopic here — this step is responsible for determining it.
-        if (!string.IsNullOrEmpty(state.Reply)) return;
-
         try
         {
-            // 1. Fetch available database catalog (Assets)
+            // 1. Fetch available database catalog (Assets) - format compactly to save tokens
             var assets = await _telemetryRepo.GetAssetsAsync(ct);
-            var assetsSummaryList = assets.Select(a => new
-            {
-                assetId = a.AssetId,
-                name = a.Name,
-                location = a.Location ?? a.AssetType
-            }).ToList();
-
-            string availableAssetsJson = JsonSerializer.Serialize(assetsSummaryList);
+            string availableAssetsJson = string.Join(" | ", assets.Select(a => $"{a.AssetId}: {a.Name}"));
 
             // 2. Build history context
             string historyContext = state.History != null && state.History.Any()
                 ? string.Join("\n", state.History.Select(h => $"{h.Role.ToUpper()}: {h.Content}"))
                 : "No prior history.";
 
-            // 3. Load & format Extractor System Prompt
+            // 3. Load & format Extractor System Prompt (Static - cached in Ollama KV memory)
             string currentTimeStr = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss 'UTC'");
             string systemPromptTemplate = await _promptProvider.GetPromptAsync("ExtractorPrompt", ct);
             string systemPrompt = systemPromptTemplate
-                .Replace("{AvailableAssetsJson}", availableAssetsJson)
-                .Replace("{CurrentTime}", currentTimeStr);
+                .Replace("{AvailableAssetsJson}", availableAssetsJson);
 
-            string userContextMessage = $"[CONVERSATION HISTORY FROM POSTGRESQL]:\n{historyContext}\n\n[LATEST USER INPUT]:\n{state.UserMessage}";
+            string userContextMessage = $"[CURRENT UTC TIME]: {currentTimeStr}\n\n[CONVERSATION HISTORY]:\n{historyContext}\n\n[LATEST USER INPUT]:\n{state.UserMessage}";
 
             // 4. Execute LLM Intent & Reply Generation
             var result = await _llmService.GenerateJsonResponseAsync<ConversationalChatResultDto>(systemPrompt, userContextMessage, ct);
@@ -72,6 +60,8 @@ public class IntentExtractionStep : IChatStep
                 state.IsComplete = result.IsComplete;
                 state.ExtractedParameters = result.ExtractedParameters ?? new ExtractedReportParametersDto();
                 state.Reply = result.ReplyMessage;
+                state.SuggestedAction = result.SuggestedAction;
+                state.SuggestedOptions = result.SuggestedOptions;
 
                 // If off-topic, ensure reply is set and exit early
                 if (!result.IsOnTopic)
@@ -81,8 +71,8 @@ public class IntentExtractionStep : IChatStep
                     return;
                 }
 
-                // Resolve AssetId from Database Catalog if LLM extracted AssetName
-                if (state.ExtractedParameters != null && !string.IsNullOrWhiteSpace(state.ExtractedParameters.AssetName) && (!state.ExtractedParameters.AssetId.HasValue || state.ExtractedParameters.AssetId == 0))
+                // Resolve AssetId and official catalog Name from Database if LLM extracted AssetName
+                if (!string.IsNullOrWhiteSpace(state.ExtractedParameters.AssetName) && (!state.ExtractedParameters.AssetId.HasValue || state.ExtractedParameters.AssetId == 0))
                 {
                     var matchedAsset = assets.FirstOrDefault(a => 
                         a.Name.Equals(state.ExtractedParameters.AssetName, StringComparison.OrdinalIgnoreCase) ||
@@ -96,14 +86,50 @@ public class IntentExtractionStep : IChatStep
                         state.ExtractedParameters.AssetName = matchedAsset.Name;
                     }
                 }
+
+                // Safety guard: Ensure isComplete is only true when both Asset and Timeframe are actually resolved
+                if (state.IsComplete)
+                {
+                    bool hasAsset = state.ExtractedParameters.AssetId.HasValue && state.ExtractedParameters.AssetId.Value > 0;
+                    bool hasTime = !string.IsNullOrWhiteSpace(state.ExtractedParameters.TimeRange) || !string.IsNullOrWhiteSpace(state.ExtractedParameters.FromDate);
+                    if (!hasAsset || !hasTime)
+                    {
+                        state.IsComplete = false;
+                    }
+                }
+
+                // Dynamic UI Action & Options Enrichment directly from live database catalog
+                if (state.IsOnTopic && !state.IsComplete)
+                {
+                    bool hasAsset = state.ExtractedParameters.AssetId.HasValue && state.ExtractedParameters.AssetId.Value > 0;
+                    if (state.SuggestedAction == "select_asset" || !hasAsset)
+                    {
+                        state.SuggestedAction = "select_asset";
+                        state.SuggestedOptions = assets.Select(a => a.Name).ToList();
+                    }
+                    else if (state.SuggestedAction == "select_timeframe" || (string.IsNullOrWhiteSpace(state.ExtractedParameters.TimeRange) && string.IsNullOrWhiteSpace(state.ExtractedParameters.FromDate)))
+                    {
+                        state.SuggestedAction = "select_timeframe";
+                        if (state.SuggestedOptions == null || !state.SuggestedOptions.Any())
+                        {
+                            state.SuggestedOptions = new List<string> { "24h", "5d", "14d", "30d" };
+                        }
+                    }
+                }
+                else if (state.IsComplete)
+                {
+                    state.SuggestedAction = "confirm_queue";
+                    state.SuggestedOptions = new List<string> { "Yes, Queue PDF Report", "Change Options" };
+                }
             }
             else
             {
-                // LLM returned null (e.g. Groq json_validate_failed on casual messages).
-                // Keep conversation alive with a natural prompt rather than an error.
+                // Fallback if LLM API call fails
                 state.IsOnTopic = true;
                 state.IsComplete = false;
                 state.Reply = "Hi there! I'm your Sensor Report Assistant. Which machine or asset would you like a report for?";
+                state.SuggestedAction = "select_asset";
+                state.SuggestedOptions = assets.Select(a => a.Name).ToList();
             }
         }
         catch (Exception ex)

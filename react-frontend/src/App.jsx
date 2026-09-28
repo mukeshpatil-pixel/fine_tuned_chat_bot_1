@@ -60,11 +60,15 @@ function App() {
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [chatError, setChatError] = useState(null);
   const [wsConnected, setWsConnected] = useState(false);
+  const [activeCalendarMsgId, setActiveCalendarMsgId] = useState(null);
+  const [chatStartDate, setChatStartDate] = useState('');
+  const [chatEndDate, setChatEndDate] = useState('');
+  const [chatQueuedJobs, setChatQueuedJobs] = useState({});
 
   const chatEndRef = useRef(null);
   const hubConnectionRef = useRef(null);
 
-  // 1. Initial Load: Fetch Assets & set Session
+  // 1. Initial Load: Fetch Assets, initialize Session, and restore cached chat history
   useEffect(() => {
     let existingSession = localStorage.getItem('sensor_bot_session');
     if (!existingSession) {
@@ -73,8 +77,51 @@ function App() {
     }
     setSessionId(existingSession);
 
+    // Immediate local cache restore (instant zero-flicker reload)
+    try {
+      const cachedMsgs = localStorage.getItem(`sensor_bot_messages_${existingSession}`);
+      if (cachedMsgs) {
+        const parsed = JSON.parse(cachedMsgs);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setMessages(parsed);
+          const lastWithParams = [...parsed].reverse().find(m => m.extractedParameters);
+          if (lastWithParams?.extractedParameters) {
+            if (lastWithParams.extractedParameters.assetId) {
+              setSelectedAssetId(lastWithParams.extractedParameters.assetId.toString());
+            }
+            if (lastWithParams.extractedParameters.timeRange) {
+              setTimeRange(lastWithParams.extractedParameters.timeRange);
+            }
+          }
+        }
+      }
+      const cachedJobs = localStorage.getItem(`sensor_bot_chat_queued_jobs_${existingSession}`);
+      if (cachedJobs) {
+        const parsedJobs = JSON.parse(cachedJobs);
+        if (parsedJobs && typeof parsedJobs === 'object') {
+          setChatQueuedJobs(parsedJobs);
+        }
+      }
+    } catch (e) {
+      console.warn("Error restoring chat cache from localStorage", e);
+    }
+
     fetchAssets();
   }, []);
+
+  // Persist messages to localStorage whenever they change
+  useEffect(() => {
+    if (sessionId && messages.length > 0) {
+      localStorage.setItem(`sensor_bot_messages_${sessionId}`, JSON.stringify(messages));
+    }
+  }, [messages, sessionId]);
+
+  // Persist queued jobs to localStorage whenever they change
+  useEffect(() => {
+    if (sessionId && Object.keys(chatQueuedJobs).length > 0) {
+      localStorage.setItem(`sensor_bot_chat_queued_jobs_${sessionId}`, JSON.stringify(chatQueuedJobs));
+    }
+  }, [chatQueuedJobs, sessionId]);
 
   // 2. Setup SignalR WebSockets Connection
   useEffect(() => {
@@ -89,15 +136,23 @@ function App() {
       .build();
 
     connection.on("ReceiveChatResponse", (res) => {
-      setMessages(prev => [...prev, {
+      const assistantMsg = {
         id: Date.now(),
         sender: 'assistant',
         text: res.replyMessage,
         isOnTopic: res.isOnTopic,
         isComplete: res.isComplete,
+        suggestedAction: res.suggestedAction,
+        suggestedOptions: res.suggestedOptions,
         extractedParameters: res.extractedParameters,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      }]);
+      };
+
+      setMessages(prev => {
+        const next = [...prev, assistantMsg];
+        localStorage.setItem(`sensor_bot_messages_${sessionId}`, JSON.stringify(next));
+        return next;
+      });
       setIsChatLoading(false);
 
       if (res.extractedParameters) {
@@ -115,14 +170,55 @@ function App() {
 
     connection.on("ReceiveHistory", (historyItems) => {
       if (historyItems && historyItems.length > 0) {
-        const formatted = historyItems.map(h => ({
-          id: h.id || Math.random(),
-          sender: h.role,
-          text: h.content,
-          isOnTopic: true,
-          timestamp: new Date(h.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        }));
-        setMessages(formatted);
+        const formatted = historyItems.map(h => {
+          let meta = {};
+          if (h.metadata) {
+            try {
+              meta = typeof h.metadata === 'string' ? JSON.parse(h.metadata) : h.metadata;
+            } catch (e) {
+              console.warn("Failed to parse message metadata", e);
+            }
+          }
+          return {
+            id: h.id || Math.random(),
+            sender: h.role,
+            text: h.content,
+            isOnTopic: meta.isOnTopic !== undefined ? meta.isOnTopic : true,
+            isComplete: meta.isComplete || false,
+            suggestedAction: meta.suggestedAction || null,
+            suggestedOptions: meta.suggestedOptions || null,
+            extractedParameters: meta.extractedParameters || null,
+            timestamp: new Date(h.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          };
+        });
+
+        // Only override if localStorage was empty or fewer messages
+        setMessages(prev => {
+          if (prev.length >= formatted.length) {
+            return prev;
+          }
+          localStorage.setItem(`sensor_bot_messages_${sessionId}`, JSON.stringify(formatted));
+          return formatted;
+        });
+
+        const lastWithParams = [...formatted].reverse().find(m => m.extractedParameters);
+        if (lastWithParams?.extractedParameters) {
+          if (lastWithParams.extractedParameters.assetId) {
+            setSelectedAssetId(lastWithParams.extractedParameters.assetId.toString());
+          }
+          if (lastWithParams.extractedParameters.timeRange) {
+            setTimeRange(lastWithParams.extractedParameters.timeRange);
+          }
+        }
+      }
+    });
+
+    connection.on("ReceiveHistoryCleared", (clearedSessionId) => {
+      setMessages([]);
+      setChatQueuedJobs({});
+      if (clearedSessionId) {
+        localStorage.removeItem(`sensor_bot_messages_${clearedSessionId}`);
+        localStorage.removeItem(`sensor_bot_chat_queued_jobs_${clearedSessionId}`);
       }
     });
 
@@ -353,10 +449,13 @@ function App() {
       });
 
       if (!res.ok) throw new Error(`Server returned HTTP ${res.status}`);
+      const data = await res.json();
       await fetchJobs();
+      return data;
     } catch (err) {
       console.error(err);
       setReportError(`Failed to queue PDF: ${err.message}`);
+      return null;
     } finally {
       setIsQueueing(false);
     }
@@ -389,7 +488,7 @@ function App() {
     }
   };
 
-  // Chat Handlers
+  // Chat Handlers — WebSockets only (SignalR)
   const handleSendChat = async (text) => {
     const messageText = text || chatInput;
     if (!messageText.trim() || isChatLoading) return;
@@ -406,53 +505,34 @@ function App() {
     setIsChatLoading(true);
     setChatError(null);
 
-    // 1. Primary: Send via SignalR WebSockets
-    if (wsConnected && hubConnectionRef.current) {
-      try {
-        await hubConnectionRef.current.invoke("SendMessage", sessionId, messageText.trim());
-        return;
-      } catch (err) {
-        console.warn("SignalR SendMessage failed, falling back to HTTP REST", err);
-      }
+    if (!wsConnected || !hubConnectionRef.current) {
+      setChatError('WebSocket not connected. Please refresh the page.');
+      setIsChatLoading(false);
+      return;
     }
 
-    // 2. Fallback: Send via HTTP REST
     try {
-      const res = await fetch(`${API_BASE_URL}/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: messageText.trim(),
-          sessionId
-        })
-      });
-
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-
-      setMessages(prev => [...prev, {
-        id: Date.now() + 1,
-        sender: 'assistant',
-        text: data.reply,
-        isOnTopic: data.isOnTopic,
-        isComplete: data.isComplete,
-        extractedParameters: data.extractedParameters,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      }]);
-
-      if (data.extractedParameters) {
-        if (data.extractedParameters.assetId) {
-          setSelectedAssetId(data.extractedParameters.assetId.toString());
-        }
-        if (data.extractedParameters.timeRange) {
-          setTimeRange(data.extractedParameters.timeRange);
-        }
-      }
+      await hubConnectionRef.current.invoke('SendMessage', sessionId, messageText.trim());
     } catch (err) {
-      console.error(err);
-      setChatError(`Failed to send message: ${err.message}`);
-    } finally {
+      console.error('SignalR SendMessage failed:', err);
+      setChatError('Failed to send message. Please check your connection.');
       setIsChatLoading(false);
+    }
+  };
+
+  const handleClearChat = async () => {
+    setMessages([]);
+    setChatQueuedJobs({});
+    if (sessionId) {
+      localStorage.removeItem(`sensor_bot_messages_${sessionId}`);
+      localStorage.removeItem(`sensor_bot_chat_queued_jobs_${sessionId}`);
+    }
+    if (hubConnectionRef.current && wsConnected) {
+      try {
+        await hubConnectionRef.current.invoke('ClearHistory', sessionId);
+      } catch (err) {
+        console.warn('Failed to clear backend history via SignalR', err);
+      }
     }
   };
 
@@ -614,7 +694,7 @@ function App() {
           <div className="nav-brand">
             <div>
               <h1 className="nav-title">Industrial Asset Telemetry & Publication Reporting</h1>
-              <p className="nav-subtitle">TimescaleDB Telemetry • Dockerized RabbitMQ Worker • Qwen 2.5 Coder 7B Guard</p>
+              <p className="nav-subtitle">TimescaleDB Telemetry • Dockerized RabbitMQ Worker • LLM Intent Extractor</p>
             </div>
           </div>
 
@@ -808,14 +888,14 @@ function App() {
                 <Bot size={20} className="icon-indigo" />
                 <div>
                   <h3>Sensor Report Assistant</h3>
-                  <p>Guard Step • Qwen 2.5 Coder 7B</p>
+                  <p>LLM Intent Extraction Step</p>
                 </div>
               </div>
 
               <button 
                 className="icon-btn-sm" 
-                onClick={() => setMessages([])} 
-                title="Clear Chat"
+                onClick={handleClearChat} 
+                title="Clear Chat History"
               >
                 <Trash2 size={16} />
               </button>
@@ -848,7 +928,7 @@ function App() {
                       onClick={() => handleSendChat("Who is Shah Rukh Khan?")}
                       className="chat-chip off-topic"
                     >
-                      <ChevronRight size={13} /> "Who is Shah Rukh Khan?" (Guard Refusal)
+                      <ChevronRight size={13} /> "Who is Shah Rukh Khan?" (Off-topic Refusal)
                     </button>
                   </div>
                 </div>
@@ -872,13 +952,133 @@ function App() {
                       )}
                       <div className="bubble-text">{m.text}</div>
 
-                      {/* Extracted Intent Parameters Card */}
+                      {/* Interactive Asset Options Shelf */}
+                      {m.sender === 'assistant' && m.isOnTopic && !m.isComplete && (m.suggestedAction === 'select_asset' || (!m.extractedParameters?.assetId && !m.extractedParameters?.assetName)) && (
+                        <div className="chat-interactive-shelf">
+                          <div className="shelf-label">
+                            <Zap size={12} />
+                            <span>Select Machine or Asset:</span>
+                          </div>
+                          <div className="shelf-chips">
+                            {(m.suggestedOptions && m.suggestedOptions.length > 0 
+                              ? m.suggestedOptions 
+                              : assets.map(a => a.name)
+                            ).map((assetName, idx) => (
+                              <button
+                                key={idx}
+                                type="button"
+                                className="interactive-chip asset-chip"
+                                onClick={() => handleSendChat(assetName)}
+                                disabled={isChatLoading}
+                              >
+                                <Database size={12} /> {assetName}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Interactive Timeframe Options & Calendar Shelf */}
+                      {m.sender === 'assistant' && m.isOnTopic && !m.isComplete && (m.suggestedAction === 'select_timeframe' || (m.extractedParameters?.assetName && !m.extractedParameters?.timeRange && !m.extractedParameters?.fromDate)) && (
+                        <div className="chat-interactive-shelf">
+                          <div className="shelf-label">
+                            <Clock size={12} />
+                            <span>Select Timeframe or Pick Dates:</span>
+                          </div>
+                          <div className="shelf-chips">
+                            <button
+                              type="button"
+                              className="interactive-chip time-chip"
+                              onClick={() => handleSendChat("last 24 hours")}
+                              disabled={isChatLoading}
+                            >
+                              ⚡ Last 24 Hours
+                            </button>
+                            <button
+                              type="button"
+                              className="interactive-chip time-chip"
+                              onClick={() => handleSendChat("last 5 days")}
+                              disabled={isChatLoading}
+                            >
+                              📊 Last 5 Days
+                            </button>
+                            <button
+                              type="button"
+                              className="interactive-chip time-chip"
+                              onClick={() => handleSendChat("last 2 weeks")}
+                              disabled={isChatLoading}
+                            >
+                              🗓️ Last 2 Weeks
+                            </button>
+                            <button
+                              type="button"
+                              className="interactive-chip time-chip"
+                              onClick={() => handleSendChat("last 30 days")}
+                              disabled={isChatLoading}
+                            >
+                              📈 Last 30 Days
+                            </button>
+                            <button
+                              type="button"
+                              className={`interactive-chip calendar-toggle-chip ${activeCalendarMsgId === m.id ? 'active' : ''}`}
+                              onClick={() => setActiveCalendarMsgId(prev => prev === m.id ? null : m.id)}
+                            >
+                              <Calendar size={12} /> {activeCalendarMsgId === m.id ? 'Hide Calendar' : 'Custom Calendar Range'}
+                            </button>
+                          </div>
+
+                          {/* Expandable Inline Calendar Date Picker */}
+                          {activeCalendarMsgId === m.id && (
+                            <div className="inline-calendar-picker animate-fadeIn">
+                              <div className="calendar-inputs">
+                                <div className="calendar-field">
+                                  <label>From Date</label>
+                                  <input
+                                    type="date"
+                                    value={chatStartDate}
+                                    onChange={(e) => setChatStartDate(e.target.value)}
+                                    max={chatEndDate || new Date().toISOString().split('T')[0]}
+                                  />
+                                </div>
+                                <div className="calendar-field">
+                                  <label>To Date</label>
+                                  <input
+                                    type="date"
+                                    value={chatEndDate}
+                                    onChange={(e) => setChatEndDate(e.target.value)}
+                                    min={chatStartDate}
+                                    max={new Date().toISOString().split('T')[0]}
+                                  />
+                                </div>
+                              </div>
+                              <div className="calendar-actions">
+                                <button
+                                  type="button"
+                                  className="btn-apply-dates"
+                                  disabled={!chatStartDate || isChatLoading}
+                                  onClick={() => {
+                                    const msg = chatEndDate 
+                                      ? `from ${chatStartDate} to ${chatEndDate}` 
+                                      : `for ${chatStartDate}`;
+                                    handleSendChat(msg);
+                                    setActiveCalendarMsgId(null);
+                                  }}
+                                >
+                                  <CheckCircle2 size={12} /> Apply Date Range
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Extracted Intent Parameters Card & Live Confirmation Flow */}
                       {m.sender === 'assistant' && m.extractedParameters && (m.extractedParameters.assetName || m.extractedParameters.timeRange || m.extractedParameters.fromDate) && (
                         <div className="extracted-params-card">
                           <div className="params-header">
                             <Zap size={13} className="text-amber" />
-                            <span>Extracted Parameters</span>
-                            {m.isComplete && <span className="complete-tag"><CheckCircle2 size={10} /> COMPLETE</span>}
+                            <span>Report Configuration</span>
+                            {m.isComplete && <span className="complete-tag"><CheckCircle2 size={10} /> READY</span>}
                           </div>
                           <div className="params-body">
                             {m.extractedParameters.assetName && (
@@ -889,41 +1089,103 @@ function App() {
                             )}
                             {m.extractedParameters.fromDate && (
                               <div className="param-chip">
-                                From: <strong>{new Date(m.extractedParameters.fromDate).toLocaleString()}</strong>
+                                From: <strong>{new Date(m.extractedParameters.fromDate).toLocaleDateString()}</strong>
                               </div>
                             )}
                             {m.extractedParameters.toDate && (
                               <div className="param-chip">
-                                To: <strong>{new Date(m.extractedParameters.toDate).toLocaleString()}</strong>
+                                To: <strong>{new Date(m.extractedParameters.toDate).toLocaleDateString()}</strong>
                               </div>
                             )}
                             {m.extractedParameters.mode && (
                               <div className="param-chip">Format: <strong>{m.extractedParameters.mode === 'raw' ? 'Full Rows' : 'Graphs Only'}</strong></div>
                             )}
                           </div>
-                          {m.isComplete && (
-                            <button 
-                              type="button"
-                              className="btn-queue-intent" 
-                              onClick={() => {
-                                const assetId = m.extractedParameters.assetId;
-                                const rangeStr = m.extractedParameters.timeRange;
-                                const fromDate = m.extractedParameters.fromDate;
-                                const toDate = m.extractedParameters.toDate;
-                                if (assetId) setSelectedAssetId(assetId.toString());
-                                if (rangeStr) setTimeRange(rangeStr);
-                                // Pass exact values from LLM — no stale state
-                                _queuePdfJob(
-                                  assetId || parseInt(selectedAssetId),
-                                  rangeStr || timeRange,
-                                  fromDate || null,
-                                  toDate || null
-                                );
-                              }}
-                            >
-                              <ListOrdered size={12} /> Queue PDF Report Now
-                            </button>
+
+                          {/* Confirmation Buttons: Yes, Queue or Change Options */}
+                          {m.isComplete && !chatQueuedJobs[m.id] && (
+                            <div className="chat-confirm-actions">
+                              <button 
+                                type="button"
+                                className="btn-confirm-yes" 
+                                disabled={isQueueing}
+                                onClick={async () => {
+                                  const assetId = m.extractedParameters.assetId;
+                                  const rangeStr = m.extractedParameters.timeRange;
+                                  const fromDate = m.extractedParameters.fromDate;
+                                  const toDate = m.extractedParameters.toDate;
+                                  if (assetId) setSelectedAssetId(assetId.toString());
+                                  if (rangeStr) setTimeRange(rangeStr);
+
+                                  const jobRes = await _queuePdfJob(
+                                    assetId || parseInt(selectedAssetId),
+                                    rangeStr || timeRange,
+                                    fromDate || null,
+                                    toDate || null
+                                  );
+
+                                  if (jobRes && jobRes.jobId) {
+                                    setChatQueuedJobs(prev => ({
+                                      ...prev,
+                                      [m.id]: {
+                                        jobId: jobRes.jobId,
+                                        assetName: m.extractedParameters.assetName || `Asset-${assetId}`
+                                      }
+                                    }));
+                                  }
+                                }}
+                              >
+                                <CheckCircle2 size={13} /> {isQueueing ? "Queuing..." : "Yes, Queue PDF Report"}
+                              </button>
+                              <button 
+                                type="button"
+                                className="btn-confirm-no" 
+                                onClick={() => handleSendChat("i want to change the settings")}
+                              >
+                                <Trash2 size={13} /> Change Options
+                              </button>
+                            </div>
                           )}
+
+                          {/* Live Queue Status & In-Chat Download Button */}
+                          {chatQueuedJobs[m.id] && (() => {
+                            const trackedJobId = chatQueuedJobs[m.id].jobId;
+                            const liveJob = jobs.find(j => j.id === trackedJobId || j.jobId === trackedJobId);
+                            const status = liveJob ? (liveJob.statusText || liveJob.status || '').toString().toLowerCase() : 'queued';
+                            const isCompleted = status === 'completed' || status === '2';
+                            const isFailed = status === 'failed' || status === '3';
+                            const isProcessing = status === 'processing' || status === '1';
+
+                            return (
+                              <div className="chat-job-status-box animate-fadeIn">
+                                {isCompleted ? (
+                                  <div className="job-ready-section">
+                                    <div className="job-ready-title">
+                                      <CheckCircle2 size={14} className="text-emerald" />
+                                      <span>PDF Report Ready for Download!</span>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      className="btn-chat-download"
+                                      onClick={() => handleDownloadJob(trackedJobId, chatQueuedJobs[m.id].assetName)}
+                                    >
+                                      <Download size={14} /> Download PDF Report
+                                    </button>
+                                  </div>
+                                ) : isFailed ? (
+                                  <div className="job-failed-section">
+                                    <AlertCircle size={14} className="text-rose" />
+                                    <span>Generation failed: {liveJob?.errorMessage || "Please try again"}</span>
+                                  </div>
+                                ) : (
+                                  <div className="job-processing-section">
+                                    <RefreshCw size={14} className="spin text-indigo" />
+                                    <span>{isProcessing ? "Rendering PDF with QuestPDF charts..." : "Job placed in background queue..."}</span>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </div>
                       )}
 

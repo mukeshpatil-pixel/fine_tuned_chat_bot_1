@@ -24,9 +24,9 @@ services:
     command:
       - "-c"
       - |
-        echo "Pulling Qwen 2.5 Coder 7B model into Ollama..."
-        OLLAMA_HOST=http://ollama:11434 ollama pull qwen2.5-coder:7b
-        echo "Qwen 2.5 Coder 7B model downloaded successfully and ready for inference!"
+        echo "Pulling Qwen 2.5 (1.5B) model into Ollama for high-speed local inference..."
+        OLLAMA_HOST=http://ollama:11434 ollama pull qwen2.5:1.5b
+        echo "Qwen 2.5 (1.5B) model downloaded successfully and ready for inference!"
     restart: "no"
 
   # ---------------- Postgres + TimescaleDB ----------------

@@ -45,8 +45,10 @@ public class ChatHistoryRepository : IChatHistoryRepository
                     session_id TEXT NOT NULL,
                     role TEXT NOT NULL,
                     content TEXT NOT NULL,
+                    metadata TEXT,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
                 );
+                ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS metadata TEXT;
                 CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages (session_id, created_at ASC);";
 
             await conn.ExecuteAsync(sql);
@@ -63,31 +65,32 @@ public class ChatHistoryRepository : IChatHistoryRepository
         }
     }
 
-    public async Task SaveMessageAsync(string sessionId, string role, string content, CancellationToken ct = default)
+    public async Task SaveMessageAsync(string sessionId, string role, string content, string? metadata = null, CancellationToken ct = default)
     {
         await EnsureTableExistsAsync(ct);
         using var conn = CreateConnection();
         const string sql = @"
-            INSERT INTO chat_messages (session_id, role, content, created_at)
-            VALUES (@SessionId, @Role, @Content, @CreatedAt);";
+            INSERT INTO chat_messages (session_id, role, content, metadata, created_at)
+            VALUES (@SessionId, @Role, @Content, @Metadata, @CreatedAt);";
 
         await conn.ExecuteAsync(sql, new
         {
             SessionId = sessionId,
             Role = role,
             Content = content,
+            Metadata = metadata,
             CreatedAt = DateTime.UtcNow
         });
     }
 
-    public async Task<IReadOnlyList<ChatMessageEntity>> GetRecentHistoryAsync(string sessionId, int limit = 10, CancellationToken ct = default)
+    public async Task<IReadOnlyList<ChatMessageEntity>> GetRecentHistoryAsync(string sessionId, int limit = 50, CancellationToken ct = default)
     {
         await EnsureTableExistsAsync(ct);
         using var conn = CreateConnection();
         const string sql = @"
-            SELECT id AS Id, session_id AS SessionId, role AS Role, content AS Content, created_at AS CreatedAt
+            SELECT id AS Id, session_id AS SessionId, role AS Role, content AS Content, metadata AS Metadata, created_at AS CreatedAt
             FROM (
-                SELECT id, session_id, role, content, created_at
+                SELECT id, session_id, role, content, metadata, created_at
                 FROM chat_messages
                 WHERE session_id = @SessionId
                 ORDER BY created_at DESC

@@ -54,7 +54,9 @@ public class ChatService : IChatService
                 IsOnTopic = state.IsOnTopic,
                 IsComplete = state.IsComplete,
                 ReplyMessage = state.Reply ?? "I can help with your sensor report. Which asset and timeframe would you like?",
-                ExtractedParameters = state.ExtractedParameters
+                ExtractedParameters = state.ExtractedParameters,
+                SuggestedAction = state.SuggestedAction,
+                SuggestedOptions = state.SuggestedOptions
             };
         }
         catch (Exception ex)

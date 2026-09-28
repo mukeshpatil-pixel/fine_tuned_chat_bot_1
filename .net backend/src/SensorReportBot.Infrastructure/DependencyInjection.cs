@@ -22,7 +22,7 @@ public static class DependencyInjection
         services.AddSingleton<IPromptProvider, FilePromptProvider>();
 
         // Primary Guard service (pure LLM/SLM classifier using structured JSON output)
-        services.AddScoped<IGuardService, LlmGuardService>();
+
 
         // TimescaleDB Telemetry Repository
         services.AddScoped<ITelemetryRepository, TelemetryRepository>();

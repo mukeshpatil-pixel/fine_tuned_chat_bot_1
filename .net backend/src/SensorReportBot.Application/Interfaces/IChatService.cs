@@ -17,6 +17,12 @@ public class ConversationalChatResultDto
     [JsonPropertyName("replyMessage")]
     public string ReplyMessage { get; set; } = string.Empty;
 
+    [JsonPropertyName("suggestedAction")]
+    public string? SuggestedAction { get; set; } // "select_asset" | "select_timeframe" | "none"
+
+    [JsonPropertyName("suggestedOptions")]
+    public List<string>? SuggestedOptions { get; set; }
+
     [JsonPropertyName("extractedParameters")]
     public ExtractedReportParametersDto? ExtractedParameters { get; set; }
 }

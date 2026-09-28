@@ -1,5 +1,6 @@
 namespace SensorReportBot.Application.Steps;
 
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using SensorReportBot.Application.Interfaces;
@@ -18,7 +19,25 @@ public class PersistAssistantReplyStep : IChatStep
     {
         if (!string.IsNullOrWhiteSpace(state.Reply) && !string.IsNullOrWhiteSpace(state.SessionId))
         {
-            await _historyRepo.SaveMessageAsync(state.SessionId, "assistant", state.Reply, ct);
+            string? metadataJson = null;
+            try
+            {
+                var metaObj = new
+                {
+                    isOnTopic = state.IsOnTopic,
+                    isComplete = state.IsComplete,
+                    suggestedAction = state.SuggestedAction,
+                    suggestedOptions = state.SuggestedOptions,
+                    extractedParameters = state.ExtractedParameters
+                };
+                metadataJson = JsonSerializer.Serialize(metaObj);
+            }
+            catch
+            {
+                // Fallback to null metadata if serialization fails
+            }
+
+            await _historyRepo.SaveMessageAsync(state.SessionId, "assistant", state.Reply, metadataJson, ct);
         }
     }
 }

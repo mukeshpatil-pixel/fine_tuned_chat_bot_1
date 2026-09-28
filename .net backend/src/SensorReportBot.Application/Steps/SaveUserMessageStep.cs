@@ -18,7 +18,7 @@ public class SaveUserMessageStep : IChatStep
     {
         if (!string.IsNullOrWhiteSpace(state.UserMessage) && !string.IsNullOrWhiteSpace(state.SessionId))
         {
-            await _historyRepo.SaveMessageAsync(state.SessionId, "user", state.UserMessage, ct);
+            await _historyRepo.SaveMessageAsync(state.SessionId, "user", state.UserMessage, metadata: null, ct: ct);
         }
     }
 }

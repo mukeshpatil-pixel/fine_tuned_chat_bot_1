@@ -18,7 +18,8 @@ public class LoadHistoryStep : IChatStep
     {
         if (!string.IsNullOrWhiteSpace(state.SessionId))
         {
-            state.History = await _historyRepo.GetRecentHistoryAsync(state.SessionId, limit: 10, ct);
+            // Limit to last 6 messages (3 conversational turns) for optimal token efficiency
+            state.History = await _historyRepo.GetRecentHistoryAsync(state.SessionId, limit: 6, ct);
         }
     }
 }

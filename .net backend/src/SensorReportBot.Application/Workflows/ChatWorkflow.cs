@@ -19,11 +19,6 @@ public class ChatWorkflow
     {
         foreach (var step in _steps)
         {
-            if (!string.IsNullOrEmpty(state.Reply))
-            {
-                break;
-            }
-
             await step.RunAsync(state, ct);
         }
 
