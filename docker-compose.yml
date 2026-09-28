@@ -101,7 +101,7 @@ services:
       - Llm__Endpoint=http://ollama:11434/v1/chat/completions
       - Llm__Model=qwen2.5:1.5b
       - Llm__Temperature=0.1
-      - Llm__MaxTokens=120
+      - Llm__MaxTokens=300
       - RabbitMQ__HostName=rabbitmq
       - RabbitMQ__Port=5672
       - RabbitMQ__UserName=guest
