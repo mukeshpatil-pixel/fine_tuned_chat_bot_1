@@ -12,16 +12,14 @@ public static class DependencyInjection
     {
         services.AddValidatorsFromAssembly(typeof(DependencyInjection).Assembly);
 
-        // Hybrid Sequential Chat Workflow Pipeline:
-        // 1. Load prior conversation history
+        // 100% LLM Sequential Chat Pipeline:
+        // 1. Load conversation history
         services.AddScoped<IChatStep, LoadHistoryStep>();
-        // 2. Save current user message
+        // 2. Save incoming user message
         services.AddScoped<IChatStep, SaveUserMessageStep>();
-        // 3. Fast-path deterministic resolver for instant (<5ms) button clicks / clear intents
-        services.AddScoped<IChatStep, RuleBasedIntentStep>();
-        // 4. Local LLM (qwen2.5:1.5b) extraction for natural, complex, and conversational messages
+        // 3. 100% LLM (qwen2.5:1.5b) extraction for EVERY turn (natural language, entities, timeframe, actions)
         services.AddScoped<IChatStep, IntentExtractionStep>();
-        // 5. Persist assistant reply to database
+        // 4. Persist assistant reply & metadata
         services.AddScoped<IChatStep, PersistAssistantReplyStep>();
 
         services.AddScoped<ChatWorkflow>();
