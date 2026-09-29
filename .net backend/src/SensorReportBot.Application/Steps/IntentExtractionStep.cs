@@ -57,8 +57,12 @@ public class IntentExtractionStep : IChatStep
                 return;
             }
 
-            // 1b. Change Settings / Reset
-            if (lower.Contains("change the settings") || lower.Contains("change settings") || lower.Contains("change options") || lower == "reset" || lower.Contains("change machine"))
+            // 1b. Change Asset / Switch Machine
+            if (lower.Contains("change asset") || lower.Contains("change machine") || lower.Contains("switch asset") || 
+                lower.Contains("switch machine") || lower.Contains("different asset") || lower.Contains("different machine") || 
+                lower.Contains("another asset") || lower.Contains("another machine") || lower.Contains("choose another") ||
+                lower.Contains("change the settings") || lower.Contains("change settings") || lower.Contains("change options") || 
+                lower == "reset" || lower == "start over" || lower == "clear")
             {
                 state.IsOnTopic = true;
                 state.IsComplete = false;
@@ -66,6 +70,25 @@ public class IntentExtractionStep : IChatStep
                 state.SuggestedAction = "select_asset";
                 state.SuggestedOptions = assets.Select(a => a.Name).ToList();
                 state.Reply = "Sure! Which machine or asset would you like to configure instead?";
+                return;
+            }
+
+            // 1c. Change Timeframe / Dates
+            if (lower.Contains("change timeframe") || lower.Contains("change time") || lower.Contains("change date") || 
+                lower.Contains("different timeframe") || lower.Contains("different time") || lower.Contains("new timeframe"))
+            {
+                state.IsOnTopic = true;
+                state.IsComplete = false;
+                state.ExtractedParameters = new ExtractedReportParametersDto
+                {
+                    AssetId = state.PreviousParameters?.AssetId,
+                    AssetName = state.PreviousParameters?.AssetName,
+                    Mode = "raw"
+                };
+                state.SuggestedAction = "select_timeframe";
+                state.SuggestedOptions = new List<string> { "24h", "5d", "14d", "30d" };
+                string name = state.PreviousParameters?.AssetName ?? "this machine";
+                state.Reply = $"Got it. What timeframe would you like for {name} instead?";
                 return;
             }
 
