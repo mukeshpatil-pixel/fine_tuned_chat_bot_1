@@ -57,6 +57,18 @@ public class IntentExtractionStep : IChatStep
                 return;
             }
 
+            // 1b. Change Settings / Reset
+            if (lower.Contains("change the settings") || lower.Contains("change settings") || lower.Contains("change options") || lower == "reset" || lower.Contains("change machine"))
+            {
+                state.IsOnTopic = true;
+                state.IsComplete = false;
+                state.ExtractedParameters = new ExtractedReportParametersDto();
+                state.SuggestedAction = "select_asset";
+                state.SuggestedOptions = assets.Select(a => a.Name).ToList();
+                state.Reply = "Sure! Which machine or asset would you like to configure instead?";
+                return;
+            }
+
             // 2. Direct click on an Asset Name chip
             var directAsset = assets.FirstOrDefault(a => a.Name.Equals(trimmed, StringComparison.OrdinalIgnoreCase));
             if (directAsset != null)
