@@ -39,6 +39,74 @@ public class IntentExtractionStep : IChatStep
             var assets = await _telemetryRepo.GetAssetsAsync(ct);
             string availableAssetsJson = string.Join(" | ", assets.Select(a => $"{a.AssetId}: {a.Name}"));
 
+            string trimmed = (state.UserMessage ?? "").Trim();
+            string lower = trimmed.ToLowerInvariant();
+
+            // ========================================================
+            // FAST-PATH: Sub-millisecond instant execution for edge UI
+            // ========================================================
+            // 1. Greetings & Catalog inquiries
+            if (lower == "hi" || lower == "hello" || lower == "hey" || lower == "help" || lower == "start" || 
+                lower == "i want report" || lower == "i want a report" || lower == "what machines are there?" || lower == "machines" || lower == "assets")
+            {
+                state.IsOnTopic = true;
+                state.IsComplete = false;
+                state.SuggestedAction = "select_asset";
+                state.SuggestedOptions = assets.Select(a => a.Name).ToList();
+                state.Reply = "Hello! Which machine or asset would you like a report for?";
+                return;
+            }
+
+            // 2. Direct click on an Asset Name chip
+            var directAsset = assets.FirstOrDefault(a => a.Name.Equals(trimmed, StringComparison.OrdinalIgnoreCase));
+            if (directAsset != null)
+            {
+                state.IsOnTopic = true;
+                state.IsComplete = false;
+                state.ExtractedParameters = new ExtractedReportParametersDto
+                {
+                    AssetId = directAsset.AssetId,
+                    AssetName = directAsset.Name,
+                    Mode = "raw"
+                };
+                state.SuggestedAction = "select_timeframe";
+                state.SuggestedOptions = new List<string> { "24h", "5d", "14d", "30d" };
+                state.Reply = $"Got it — {directAsset.Name}. What timeframe would you like to inspect?";
+                return;
+            }
+
+            // 3. Direct click on a Timeframe preset (24h, 5d, 14d, 30d) when Asset is already selected
+            if (state.PreviousParameters?.AssetId.HasValue == true && state.PreviousParameters.AssetId > 0 &&
+                (lower == "24h" || lower == "5d" || lower == "14d" || lower == "30d" || lower == "7d"))
+            {
+                state.IsOnTopic = true;
+                state.IsComplete = true;
+                state.ExtractedParameters = new ExtractedReportParametersDto
+                {
+                    AssetId = state.PreviousParameters.AssetId,
+                    AssetName = state.PreviousParameters.AssetName,
+                    TimeRange = lower,
+                    Mode = "raw"
+                };
+                state.SuggestedAction = "confirm_queue";
+                state.SuggestedOptions = new List<string> { "Yes, Queue PDF Report", "Change Options" };
+                state.Reply = $"I have configured your report for {state.PreviousParameters.AssetName} covering {lower}. Would you like me to queue and generate this PDF report now?";
+                return;
+            }
+
+            // 4. Confirmation action ("Yes, Queue PDF Report")
+            if ((lower.Contains("yes, queue") || lower == "yes" || lower == "queue" || lower == "generate") &&
+                state.PreviousParameters?.AssetId.HasValue == true && state.PreviousParameters.AssetId > 0)
+            {
+                state.IsOnTopic = true;
+                state.IsComplete = true;
+                state.ExtractedParameters = state.PreviousParameters;
+                state.SuggestedAction = "confirm_queue";
+                state.SuggestedOptions = new List<string> { "Yes, Queue PDF Report", "Change Options" };
+                state.Reply = $"I have confirmed your report configuration for {state.PreviousParameters.AssetName}. You can click Queue to generate.";
+                return;
+            }
+
             // 2. Build history context (filter out off-topic exchanges so they don't bias or confuse the LLM)
             var cleanHistory = state.History?
                 .Where(h => {
@@ -66,12 +134,11 @@ public class IntentExtractionStep : IChatStep
                 : "No prior history.";
 
             // 3. Load & format Extractor System Prompt (Static - cached in Ollama KV memory)
-            string currentTimeStr = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss 'UTC'");
             string systemPromptTemplate = await _promptProvider.GetPromptAsync("ExtractorPrompt", ct);
             string systemPrompt = systemPromptTemplate
                 .Replace("{AvailableAssetsJson}", availableAssetsJson);
 
-            string userContextMessage = $"[CURRENT UTC TIME]: {currentTimeStr}\n\n[CONVERSATION HISTORY]:\n{historyContext}\n\n[LATEST USER INPUT]:\n{state.UserMessage}";
+            string userContextMessage = $"[CONVERSATION HISTORY]:\n{historyContext}\n\n[LATEST USER INPUT]:\n{state.UserMessage}\n\n[DATE UTC]: {DateTime.UtcNow:yyyy-MM-dd}";
 
             // 4. Pure LLM Call for every single message
             var result = await _llmService.GenerateJsonResponseAsync<ConversationalChatResultDto>(systemPrompt, userContextMessage, ct);

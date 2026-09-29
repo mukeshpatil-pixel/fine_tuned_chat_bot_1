@@ -102,7 +102,7 @@ services:
       - Llm__Endpoint=http://ollama:11434/v1/chat/completions
       - Llm__Model=qwen2.5:0.5b
       - Llm__Temperature=0.1
-      - Llm__MaxTokens=300
+      - Llm__MaxTokens=110
       - RabbitMQ__HostName=rabbitmq
       - RabbitMQ__Port=5672
       - RabbitMQ__UserName=guest
@@ -120,6 +120,7 @@ services:
       - Cors__AllowedOrigins__9=http://127.0.0.1:6173
     volumes:
       - pdf_reports:/app/storage/reports
+      - ./.net backend/src/SensorReportBot.Infrastructure/Prompts:/app/Prompts:ro
     depends_on:
       timescaledb:
         condition: service_healthy
