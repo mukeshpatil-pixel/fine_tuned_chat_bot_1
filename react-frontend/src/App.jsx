@@ -133,7 +133,11 @@ function App() {
       .withUrl(HUB_URL, {
         transport: signalR.HttpTransportType.WebSockets | signalR.HttpTransportType.LongPolling
       })
-      .withAutomaticReconnect([0, 2000, 5000, 10000])
+      .withAutomaticReconnect({
+        nextRetryDelayInMilliseconds: retryContext => {
+          return Math.min(1000 * Math.pow(1.3, retryContext.previousRetryCount), 5000);
+        }
+      })
       .configureLogging(signalR.LogLevel.Warning)
       .build();
 
@@ -246,19 +250,60 @@ function App() {
       }
     });
 
-    connection.start()
-      .then(() => {
+    let isMounted = true;
+    let retryTimer = null;
+
+    const startConnection = async () => {
+      if (!isMounted) return;
+      if (connection.state === signalR.HubConnectionState.Connected) {
         setWsConnected(true);
-        connection.invoke("GetHistory", sessionId);
-      })
-      .catch(err => {
-        console.warn("SignalR Connection failed, falling back to REST API", err);
+        return;
+      }
+      if (connection.state === signalR.HubConnectionState.Connecting || connection.state === signalR.HubConnectionState.Reconnecting) {
+        return;
+      }
+      try {
+        await connection.start();
+        if (isMounted) {
+          setWsConnected(true);
+          setChatError(null);
+          connection.invoke("GetHistory", sessionId).catch(() => {});
+        }
+      } catch (err) {
+        if (isMounted) {
+          console.warn("SignalR Connection attempt failed, retrying in 3s...", err);
+          setWsConnected(false);
+          retryTimer = setTimeout(startConnection, 3000);
+        }
+      }
+    };
+
+    connection.onreconnecting(() => {
+      if (isMounted) setWsConnected(false);
+    });
+
+    connection.onreconnected(() => {
+      if (isMounted) {
+        setWsConnected(true);
+        setChatError(null);
+        connection.invoke("GetHistory", sessionId).catch(() => {});
+      }
+    });
+
+    connection.onclose(() => {
+      if (isMounted) {
         setWsConnected(false);
-      });
+        retryTimer = setTimeout(startConnection, 3000);
+      }
+    });
+
+    startConnection();
 
     hubConnectionRef.current = connection;
 
     return () => {
+      isMounted = false;
+      if (retryTimer) clearTimeout(retryTimer);
       connection.stop();
     };
   }, [sessionId]);
@@ -529,14 +574,24 @@ function App() {
     setIsChatLoading(true);
     setChatError(null);
 
-    if (!wsConnected || !hubConnectionRef.current) {
-      setChatError('WebSocket not connected. Please refresh the page.');
+    const conn = hubConnectionRef.current;
+    if (conn && conn.state === signalR.HubConnectionState.Disconnected) {
+      try {
+        await conn.start();
+        setWsConnected(true);
+      } catch (e) {
+        console.warn("Auto-reconnect before send failed:", e);
+      }
+    }
+
+    if (!conn || conn.state !== signalR.HubConnectionState.Connected) {
+      setChatError('WebSocket connecting... please click the WebSockets badge above to retry.');
       setIsChatLoading(false);
       return;
     }
 
     try {
-      await hubConnectionRef.current.invoke('SendMessage', sessionId, messageText.trim());
+      await conn.invoke('SendMessage', sessionId, messageText.trim());
     } catch (err) {
       console.error('SignalR SendMessage failed:', err);
       setChatError('Failed to send message. Please check your connection.');
@@ -723,8 +778,18 @@ function App() {
           </div>
 
           <div className="nav-badges">
-            <span className={`system-pill ${wsConnected ? 'active' : ''}`}>
-              <span className={`dot ${wsConnected ? '' : 'danger'}`}></span> WebSockets ({wsConnected ? 'Connected' : 'Connecting...'})
+            <span 
+              className={`system-pill ${wsConnected ? 'active' : ''}`}
+              style={{ cursor: 'pointer' }}
+              title={wsConnected ? 'Connected via SignalR' : 'Click to reconnect'}
+              onClick={() => {
+                const conn = hubConnectionRef.current;
+                if (conn) {
+                  conn.start().then(() => setWsConnected(true)).catch(e => console.warn('Manual reconnect failed:', e));
+                }
+              }}
+            >
+              <span className={`dot ${wsConnected ? '' : 'danger'}`}></span> WebSockets ({wsConnected ? 'Connected' : 'Connecting... (Click to Retry)'})
             </span>
             <span className="system-pill active">
               <span className="dot"></span> RabbitMQ Broker (5672)
