@@ -310,8 +310,31 @@ public class QuestPdfReportService : IPdfReportService
                         continue;
                     }
 
-                    // Show all unaggregated readings for this signal
-                    var pointsToPrint = sig.DataPoints;
+                    // For large timeframes (e.g. 2 weeks, millions of readings), sample up to 1,000 representative points per channel
+                    // to prevent multi-gigabyte memory consumption while keeping statistical analysis 100% complete.
+                    const int maxRowsPerSignal = 1000;
+                    List<SignalDataPointDto> pointsToPrint;
+                    bool isSampled = sig.DataPoints.Count > maxRowsPerSignal;
+
+                    if (!isSampled)
+                    {
+                        pointsToPrint = sig.DataPoints;
+                    }
+                    else
+                    {
+                        pointsToPrint = new List<SignalDataPointDto>(maxRowsPerSignal);
+                        double sampleStep = (double)(sig.DataPoints.Count - 1) / (maxRowsPerSignal - 1);
+                        for (int i = 0; i < maxRowsPerSignal; i++)
+                        {
+                            int index = (int)Math.Round(i * sampleStep);
+                            if (index < sig.DataPoints.Count)
+                                pointsToPrint.Add(sig.DataPoints[index]);
+                        }
+
+                        col.Item().PaddingTop(2).Text($"Displaying {pointsToPrint.Count:N0} representative readings sampled evenly across the timeframe (from {sig.DataPoints.Count:N0} total captured telemetry records). Complete statistical envelope and trend graphs encompass 100% of all data points.")
+                            .FontSize(7.5f).Italic().FontColor(Colors.Grey.Darken1);
+                    }
+
                     int totalPoints = pointsToPrint.Count;
                     int rowPairs = (totalPoints + 1) / 2;
 

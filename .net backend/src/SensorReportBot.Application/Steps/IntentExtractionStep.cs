@@ -17,17 +17,20 @@ public class IntentExtractionStep : IChatStep
     private readonly ILlmService _llmService;
     private readonly IPromptProvider _promptProvider;
     private readonly ITelemetryRepository _telemetryRepo;
+    private readonly IPdfJobQueue _pdfJobQueue;
     private readonly ILogger<IntentExtractionStep> _logger;
 
     public IntentExtractionStep(
         ILlmService llmService,
         IPromptProvider promptProvider,
         ITelemetryRepository telemetryRepo,
+        IPdfJobQueue pdfJobQueue,
         ILogger<IntentExtractionStep> logger)
     {
         _llmService = llmService;
         _promptProvider = promptProvider;
         _telemetryRepo = telemetryRepo;
+        _pdfJobQueue = pdfJobQueue;
         _logger = logger;
     }
 
@@ -164,16 +167,62 @@ public class IntentExtractionStep : IChatStep
                 return;
             }
 
-            // 4. Confirmation action ("Yes, Queue PDF Report")
-            if ((lower.Contains("yes, queue") || lower == "yes" || lower == "queue" || lower == "generate") &&
-                state.PreviousParameters?.AssetId.HasValue == true && state.PreviousParameters.AssetId > 0)
+            // 4. Confirmation action ("Yes, Queue PDF Report", "ok lets do it", "generate report", etc.)
+            bool isConfirm = lower.Contains("yes, queue") || lower.Contains("yes please") || lower == "yes" || 
+                             lower.Contains("queue") || lower.Contains("generate") || lower.Contains("lets do it") || 
+                             lower.Contains("let's do it") || lower.Contains("do it") || lower.Contains("proceed") || 
+                             lower.Contains("go ahead") || lower.Contains("confirm") || lower == "sure" || 
+                             lower == "ok" || lower == "okay";
+
+            if (isConfirm && state.PreviousParameters?.AssetId.HasValue == true && state.PreviousParameters.AssetId > 0)
             {
+                var assetId = state.PreviousParameters.AssetId.Value;
+                var assetName = state.PreviousParameters.AssetName ?? $"Asset-{assetId}";
+                var timeRange = state.PreviousParameters.TimeRange ?? "24h";
+
+                DateTime to = DateTime.UtcNow;
+                DateTime from = to.AddDays(-1);
+                if (!string.IsNullOrWhiteSpace(state.PreviousParameters.FromDate))
+                {
+                    if (DateTime.TryParse(state.PreviousParameters.FromDate, out var parsedFrom))
+                        from = parsedFrom;
+                    if (!string.IsNullOrWhiteSpace(state.PreviousParameters.ToDate) && DateTime.TryParse(state.PreviousParameters.ToDate, out var parsedTo))
+                        to = parsedTo;
+                }
+                else
+                {
+                    var matchHour = System.Text.RegularExpressions.Regex.Match(timeRange, @"(\d+)\s*h");
+                    var matchDay = System.Text.RegularExpressions.Regex.Match(timeRange, @"(\d+)\s*d");
+                    if (matchHour.Success && int.TryParse(matchHour.Groups[1].Value, out int h))
+                        from = to.AddHours(-h);
+                    else if (matchDay.Success && int.TryParse(matchDay.Groups[1].Value, out int d))
+                        from = to.AddDays(-d);
+                    else
+                        from = to.AddDays(-7);
+                }
+
+                var req = new ReportRequestDto
+                {
+                    AssetId = assetId,
+                    From = from,
+                    To = to,
+                    IncludeEvents = true,
+                    IncludeAlerts = true,
+                    IncludeInsights = true,
+                    IncludeCharts = true,
+                    IncludeFullRawData = true
+                };
+
+                var job = await _pdfJobQueue.EnqueueAsync(req, assetName, ct);
+
                 state.IsOnTopic = true;
                 state.IsComplete = true;
+                state.JobId = job.Id;
                 state.ExtractedParameters = state.PreviousParameters;
                 state.SuggestedAction = "confirm_queue";
-                state.SuggestedOptions = new List<string> { "Yes, Queue PDF Report", "Change Options" };
-                state.Reply = $"I have confirmed your report configuration for {state.PreviousParameters.AssetName}. You can click Queue to generate.";
+                state.SuggestedOptions = new List<string> { "Change Options" };
+                string shortJobId = job.Id.ToString()[..8].ToUpper();
+                state.Reply = $"🚀 Report for **{assetName}** covering **{timeRange}** has been queued for background generation (Job **REP-{shortJobId}**)! You can track live progress and download it below.";
                 return;
             }
 

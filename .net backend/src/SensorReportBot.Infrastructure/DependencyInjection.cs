@@ -15,8 +15,11 @@ public static class DependencyInjection
         services.Configure<LlmOptions>(configuration.GetSection(LlmOptions.SectionName));
         services.Configure<RabbitMqOptions>(configuration.GetSection(RabbitMqOptions.SectionName));
 
-        // Register HttpClient for LLM Service
-        services.AddHttpClient<ILlmService, LlmService>();
+        // Register HttpClient for LLM Service with generous timeout for local models
+        services.AddHttpClient<ILlmService, LlmService>(client =>
+        {
+            client.Timeout = System.TimeSpan.FromSeconds(180);
+        });
 
         // System prompt provider (reads system prompts from Prompts/ directory)
         services.AddSingleton<IPromptProvider, FilePromptProvider>();

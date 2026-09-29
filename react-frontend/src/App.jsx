@@ -157,6 +157,17 @@ function App() {
       });
       setIsChatLoading(false);
 
+      if (res.jobId) {
+        setChatQueuedJobs(prev => ({
+          ...prev,
+          [assistantMsg.id]: {
+            jobId: res.jobId,
+            assetName: res.extractedParameters?.assetName || 'Asset'
+          }
+        }));
+        fetchJobs();
+      }
+
       if (res.extractedParameters) {
         if (res.extractedParameters.assetId) {
           setSelectedAssetId(res.extractedParameters.assetId.toString());
@@ -181,7 +192,7 @@ function App() {
               console.warn("Failed to parse message metadata", e);
             }
           }
-          return {
+          const msgObj = {
             id: h.id || Math.random(),
             sender: h.role,
             text: h.content,
@@ -190,8 +201,19 @@ function App() {
             suggestedAction: meta.suggestedAction || null,
             suggestedOptions: meta.suggestedOptions || null,
             extractedParameters: meta.extractedParameters || null,
+            jobId: meta.jobId || null,
             timestamp: new Date(h.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
           };
+          if (meta.jobId) {
+            setChatQueuedJobs(prev => ({
+              ...prev,
+              [msgObj.id]: {
+                jobId: meta.jobId,
+                assetName: meta.extractedParameters?.assetName || 'Asset'
+              }
+            }));
+          }
+          return msgObj;
         });
 
         // Only override if localStorage was empty or fewer messages
@@ -1107,7 +1129,7 @@ function App() {
                           </div>
 
                           {/* Confirmation Buttons: Yes, Queue or Change Options */}
-                          {(m.isComplete || m.suggestedAction === 'confirm_queue' || (m.extractedParameters?.assetName && (m.extractedParameters?.timeRange || m.extractedParameters?.fromDate))) && !chatQueuedJobs[m.id] && (
+                          {(m.isComplete || m.suggestedAction === 'confirm_queue' || (m.extractedParameters?.assetName && (m.extractedParameters?.timeRange || m.extractedParameters?.fromDate))) && !chatQueuedJobs[m.id] && !m.jobId && (
                             <div className="chat-confirm-actions">
                               <button 
                                 type="button"

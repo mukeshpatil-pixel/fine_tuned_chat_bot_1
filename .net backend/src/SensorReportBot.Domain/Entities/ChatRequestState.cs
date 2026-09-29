@@ -59,6 +59,9 @@ public class ChatRequestState
     /// <summary>Report configuration restored from the previous assistant message (server-side source of truth).</summary>
     public ExtractedReportParametersDto? PreviousParameters { get; set; }
 
+    /// <summary>Optional JobId if a PDF report generation was queued during this turn.</summary>
+    public Guid? JobId { get; set; }
+
     /// <summary>True when the rule-based step already produced the full reply, so the LLM call is skipped.</summary>
     public bool IsHandled { get; set; }
 }

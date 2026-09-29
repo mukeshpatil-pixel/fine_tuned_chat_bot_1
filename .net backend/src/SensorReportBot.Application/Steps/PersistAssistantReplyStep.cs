@@ -28,7 +28,8 @@ public class PersistAssistantReplyStep : IChatStep
                     isComplete = state.IsComplete,
                     suggestedAction = state.SuggestedAction,
                     suggestedOptions = state.SuggestedOptions,
-                    extractedParameters = state.ExtractedParameters
+                    extractedParameters = state.ExtractedParameters,
+                    jobId = state.JobId
                 };
                 metadataJson = JsonSerializer.Serialize(metaObj);
             }

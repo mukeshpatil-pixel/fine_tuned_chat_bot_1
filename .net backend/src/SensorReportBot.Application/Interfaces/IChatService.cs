@@ -25,6 +25,9 @@ public class ConversationalChatResultDto
 
     [JsonPropertyName("extractedParameters")]
     public ExtractedReportParametersDto? ExtractedParameters { get; set; }
+
+    [JsonPropertyName("jobId")]
+    public System.Guid? JobId { get; set; }
 }
 
 public interface IChatService
