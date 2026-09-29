@@ -75,9 +75,18 @@ public class IntentExtractionStep : IChatStep
                 return;
             }
 
-            // 3. Direct click on a Timeframe preset (24h, 5d, 14d, 30d) when Asset is already selected
-            if (state.PreviousParameters?.AssetId.HasValue == true && state.PreviousParameters.AssetId > 0 &&
-                (lower == "24h" || lower == "5d" || lower == "14d" || lower == "30d" || lower == "7d"))
+            // 3. Direct click or natural language Timeframe when Asset is already selected
+            string? fastTimeRange = TryExtractTimeRange(lower);
+            if (string.IsNullOrWhiteSpace(fastTimeRange))
+            {
+                var (fastFrom, fastTo) = TryExtractDateRange(state.UserMessage);
+                if (!string.IsNullOrWhiteSpace(fastFrom))
+                {
+                    fastTimeRange = $"{fastFrom.Split('T')[0]} to {fastTo?.Split('T')[0] ?? "now"}";
+                }
+            }
+
+            if (state.PreviousParameters?.AssetId.HasValue == true && state.PreviousParameters.AssetId > 0 && !string.IsNullOrWhiteSpace(fastTimeRange))
             {
                 state.IsOnTopic = true;
                 state.IsComplete = true;
@@ -85,12 +94,38 @@ public class IntentExtractionStep : IChatStep
                 {
                     AssetId = state.PreviousParameters.AssetId,
                     AssetName = state.PreviousParameters.AssetName,
-                    TimeRange = lower,
+                    TimeRange = fastTimeRange,
                     Mode = "raw"
                 };
                 state.SuggestedAction = "confirm_queue";
                 state.SuggestedOptions = new List<string> { "Yes, Queue PDF Report", "Change Options" };
-                state.Reply = $"I have configured your report for {state.PreviousParameters.AssetName} covering {lower}. Would you like me to queue and generate this PDF report now?";
+                state.Reply = $"I have configured your report for {state.PreviousParameters.AssetName} covering {fastTimeRange}. Would you like me to queue and generate this PDF report now?";
+                return;
+            }
+
+            // 3b. One-shot Natural Language matching for known catalog assets + timeframes
+            var oneShotAsset = assets.FirstOrDefault(a => 
+                lower.Contains(a.Name.ToLowerInvariant()) ||
+                (lower.Contains("crusher") && a.Name.Contains("Crusher", StringComparison.OrdinalIgnoreCase)) ||
+                (lower.Contains("boiler") && a.Name.Contains("Boiler", StringComparison.OrdinalIgnoreCase)) ||
+                (lower.Contains("compressor") && a.Name.Contains("Compressor", StringComparison.OrdinalIgnoreCase)) ||
+                (lower.Contains("conveyor") && a.Name.Contains("Conveyor", StringComparison.OrdinalIgnoreCase)) ||
+                (lower.Contains("cooling") && a.Name.Contains("Cooling", StringComparison.OrdinalIgnoreCase)));
+
+            if (oneShotAsset != null && !string.IsNullOrWhiteSpace(fastTimeRange))
+            {
+                state.IsOnTopic = true;
+                state.IsComplete = true;
+                state.ExtractedParameters = new ExtractedReportParametersDto
+                {
+                    AssetId = oneShotAsset.AssetId,
+                    AssetName = oneShotAsset.Name,
+                    TimeRange = fastTimeRange,
+                    Mode = "raw"
+                };
+                state.SuggestedAction = "confirm_queue";
+                state.SuggestedOptions = new List<string> { "Yes, Queue PDF Report", "Change Options" };
+                state.Reply = $"I have configured your report for {oneShotAsset.Name} covering {fastTimeRange}. Would you like me to queue and generate this PDF report now?";
                 return;
             }
 
