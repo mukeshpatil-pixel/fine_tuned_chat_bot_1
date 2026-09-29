@@ -310,28 +310,20 @@ public class QuestPdfReportService : IPdfReportService
                         continue;
                     }
 
-                    // For large timeframes (e.g. 2 weeks, millions of readings), sample up to 1,000 representative points per channel
-                    // to prevent multi-gigabyte memory consumption while keeping statistical analysis 100% complete.
-                    const int maxRowsPerSignal = 1000;
+                    // Strictly preserve 1-minute sensor polling intervals (no downsampling or altered time buckets)
+                    const int maxRowsPerSignal = 2880; // Up to 48 hours of uninterrupted 1-minute interval readings
                     List<SignalDataPointDto> pointsToPrint;
-                    bool isSampled = sig.DataPoints.Count > maxRowsPerSignal;
 
-                    if (!isSampled)
+                    if (sig.DataPoints.Count <= maxRowsPerSignal)
                     {
                         pointsToPrint = sig.DataPoints;
                     }
                     else
                     {
-                        pointsToPrint = new List<SignalDataPointDto>(maxRowsPerSignal);
-                        double sampleStep = (double)(sig.DataPoints.Count - 1) / (maxRowsPerSignal - 1);
-                        for (int i = 0; i < maxRowsPerSignal; i++)
-                        {
-                            int index = (int)Math.Round(i * sampleStep);
-                            if (index < sig.DataPoints.Count)
-                                pointsToPrint.Add(sig.DataPoints[index]);
-                        }
+                        // Print consecutive 1-minute interval readings (latest 48h operational block)
+                        pointsToPrint = sig.DataPoints.TakeLast(maxRowsPerSignal).ToList();
 
-                        col.Item().PaddingTop(2).Text($"Displaying {pointsToPrint.Count:N0} representative readings sampled evenly across the timeframe (from {sig.DataPoints.Count:N0} total captured telemetry records). Complete statistical envelope and trend graphs encompass 100% of all data points.")
+                        col.Item().PaddingTop(2).Text($"Displaying latest {pointsToPrint.Count:N0} consecutive 1-minute interval readings ({pointsToPrint.First().Time:yyyy-MM-dd HH:mm} to {pointsToPrint.Last().Time:yyyy-MM-dd HH:mm} UTC). Complete statistical envelope and trend graphs encompass all {sig.DataPoints.Count:N0} measurements across the entire timeframe.")
                             .FontSize(7.5f).Italic().FontColor(Colors.Grey.Darken1);
                     }
 

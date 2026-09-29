@@ -201,9 +201,15 @@ public class IntentExtractionStep : IChatStep
                         from = to.AddDays(-7);
                 }
 
+                var assetSignals = await _telemetryRepo.GetSignalsByAssetAsync(assetId, ct);
+                var targetSignalIds = (state.PreviousParameters.SignalIds != null && state.PreviousParameters.SignalIds.Count > 0)
+                    ? state.PreviousParameters.SignalIds
+                    : assetSignals.Take(6).Select(s => s.SignalId).ToList();
+
                 var req = new ReportRequestDto
                 {
                     AssetId = assetId,
+                    SignalIds = targetSignalIds,
                     From = from,
                     To = to,
                     IncludeEvents = true,
