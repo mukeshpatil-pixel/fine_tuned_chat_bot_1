@@ -9,7 +9,7 @@ services:
       POSTGRES_PASSWORD: iam_pass
       POSTGRES_DB: iam_db
     ports:
-      - "5432:5432"
+      - "6432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./iam-seed/init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -41,7 +41,7 @@ services:
     container_name: sensorbot_rabbitmq
     restart: unless-stopped
     ports:
-      - "5672:5672"   # AMQP Protocol
+      - "6772:5672"   # AMQP Protocol (external host port 6772)
       - "15672:15672" # Management Web Dashboard UI
     environment:
       RABBITMQ_DEFAULT_USER: guest
@@ -93,7 +93,7 @@ services:
     container_name: sensorbot_backend
     restart: unless-stopped
     ports:
-      - "5000:5000"
+      - "6001:5000"
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_URLS=http://+:5000
@@ -115,6 +115,8 @@ services:
       - Cors__AllowedOrigins__5=http://127.0.0.1:5174
       - Cors__AllowedOrigins__6=http://127.0.0.1:80
       - Cors__AllowedOrigins__7=http://127.0.0.1
+      - Cors__AllowedOrigins__8=http://localhost:6173
+      - Cors__AllowedOrigins__9=http://127.0.0.1:6173
     volumes:
       - pdf_reports:/app/storage/reports
     depends_on:
@@ -133,7 +135,7 @@ services:
     container_name: sensorbot_frontend
     restart: unless-stopped
     ports:
-      - "5173:80"
+      - "6173:80"
     depends_on:
       - backend
 

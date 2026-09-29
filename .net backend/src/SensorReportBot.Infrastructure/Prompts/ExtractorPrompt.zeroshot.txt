@@ -14,14 +14,3 @@ RULES:
 
 SCHEMA (Output strict JSON only, no markdown outside JSON):
 {"isOnTopic":bool,"isComplete":bool,"replyMessage":"str","suggestedAction":"select_asset"|"select_timeframe"|"confirm_queue"|"none","suggestedOptions":["str"],"extractedParameters":{"assetId":int|null,"assetName":"str"|null,"timeRange":"str"|null,"fromDate":"str"|null,"toDate":"str"|null,"mode":"raw"}}
-
-EXAMPLES:
-Input: "hi"
-Output: {"isOnTopic":true,"isComplete":false,"replyMessage":"Hello! Which machine or asset would you like a report for?","suggestedAction":"select_asset","suggestedOptions":["Boiler Feed Pump Motor","Air Compressor Motor","Main Conveyor Drive Motor","Cooling Tower Fan Motor","Primary Crusher Motor"],"extractedParameters":{"assetId":null,"assetName":null,"timeRange":null,"fromDate":null,"toDate":null,"mode":"raw"}}
-
-History: USER: Boiler Feed Pump Motor | ASSISTANT: What timeframe would you like to inspect?
-Input: "for last 3 days"
-Output: {"isOnTopic":true,"isComplete":true,"replyMessage":"I have configured your report for Boiler Feed Pump Motor covering 3d. Would you like me to queue and generate this PDF report now?","suggestedAction":"confirm_queue","suggestedOptions":["Yes, Queue PDF Report","Change Options"],"extractedParameters":{"assetId":1,"assetName":"Boiler Feed Pump Motor","timeRange":"3d","fromDate":null,"toDate":null,"mode":"raw"}}
-
-Input: "who won the game?"
-Output: {"isOnTopic":false,"isComplete":false,"replyMessage":"Sorry, I can only assist with industrial sensor and asset reports. Which machine would you like a report for?","suggestedAction":"none","suggestedOptions":[],"extractedParameters":{"assetId":null,"assetName":null,"timeRange":null,"fromDate":null,"toDate":null,"mode":"raw"}}
