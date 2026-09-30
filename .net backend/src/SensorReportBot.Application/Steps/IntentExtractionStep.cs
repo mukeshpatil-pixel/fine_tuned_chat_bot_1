@@ -143,6 +143,25 @@ public class IntentExtractionStep : IChatStep
             if (directAsset != null)
             {
                 state.IsOnTopic = true;
+                if (!string.IsNullOrWhiteSpace(state.PreviousParameters?.TimeRange) || !string.IsNullOrWhiteSpace(state.PreviousParameters?.FromDate))
+                {
+                    state.IsComplete = true;
+                    state.ExtractedParameters = new ExtractedReportParametersDto
+                    {
+                        AssetId = directAsset.AssetId,
+                        AssetName = directAsset.Name,
+                        TimeRange = state.PreviousParameters.TimeRange,
+                        FromDate = state.PreviousParameters.FromDate,
+                        ToDate = state.PreviousParameters.ToDate,
+                        Mode = "raw"
+                    };
+                    state.SuggestedAction = "confirm_queue";
+                    state.SuggestedOptions = new List<string> { "Yes, Queue PDF Report", "Change Options" };
+                    string displayRange = state.PreviousParameters.TimeRange ?? $"{state.PreviousParameters.FromDate} to {state.PreviousParameters.ToDate}";
+                    state.Reply = $"I have configured your report for {directAsset.Name} covering {displayRange}. Would you like me to queue and generate this PDF report now?";
+                    return;
+                }
+
                 state.IsComplete = false;
                 state.ExtractedParameters = new ExtractedReportParametersDto
                 {
@@ -183,6 +202,24 @@ public class IntentExtractionStep : IChatStep
                 state.SuggestedAction = "confirm_queue";
                 state.SuggestedOptions = new List<string> { "Yes, Queue PDF Report", "Change Options" };
                 state.Reply = $"I have configured your report for {state.PreviousParameters.AssetName} covering {fastTimeRange}. Would you like me to queue and generate this PDF report now?";
+                return;
+            }
+
+            // 3a. User specified a Timeframe FIRST (before selecting an asset) e.g. "Last week data", "24h"
+            if (explicitAsset == null && (state.PreviousParameters?.AssetId == null || state.PreviousParameters.AssetId <= 0) && !string.IsNullOrWhiteSpace(fastTimeRange))
+            {
+                state.IsOnTopic = true;
+                state.IsComplete = false;
+                state.ExtractedParameters = new ExtractedReportParametersDto
+                {
+                    TimeRange = fastTimeRange,
+                    FromDate = fastFrom,
+                    ToDate = fastTo,
+                    Mode = "raw"
+                };
+                state.SuggestedAction = "select_asset";
+                state.SuggestedOptions = assets.Select(a => a.Name).ToList();
+                state.Reply = $"Got it — timeframe set to {fastTimeRange}. Which machine or asset would you like a report for?";
                 return;
             }
 
@@ -642,10 +679,10 @@ public class IntentExtractionStep : IChatStep
                 return $"{m * 30}d";
         }
 
-        if (t.Contains("daily") || t.Contains("today") || t.Contains("yesterday") || t.Contains("1 day")) return "24h";
-        if (t.Contains("weekly") || t.Contains("a week") || t.Contains("one week") || t.Contains("1 week")) return "7d";
-        if (t.Contains("bi-weekly") || t.Contains("biweekly") || t.Contains("fortnight") || t.Contains("fortnt") || t.Contains("two weeks") || t.Contains("2 weks")) return "14d";
-        if (t.Contains("monthly") || t.Contains("a month") || t.Contains("one month")) return "30d";
+        if (t.Contains("daily") || t.Contains("today") || t.Contains("yesterday") || t.Contains("1 day") || t.Contains("last day") || t.Contains("past day")) return "24h";
+        if (t.Contains("weekly") || t.Contains("a week") || t.Contains("one week") || t.Contains("1 week") || t.Contains("last week") || t.Contains("past week") || t.Contains("previous week") || t.Contains("this week")) return "7d";
+        if (t.Contains("bi-weekly") || t.Contains("biweekly") || t.Contains("fortnight") || t.Contains("fortnt") || t.Contains("two weeks") || t.Contains("2 weks") || t.Contains("last 2 weeks")) return "14d";
+        if (t.Contains("monthly") || t.Contains("a month") || t.Contains("one month") || t.Contains("last month") || t.Contains("past month") || t.Contains("previous month") || t.Contains("this month")) return "30d";
 
         // Bare number in context e.g. "3" or "2"
         if (int.TryParse(t, out int bareNum) && bareNum > 0 && bareNum <= 365)

@@ -15,20 +15,3 @@ Rules:
 
 JSON:
 {"isOnTopic":bool,"isComplete":bool,"replyMessage":"","suggestedAction":"select_asset"|"select_timeframe"|"confirm_queue"|"none","suggestedOptions":[],"extractedParameters":{"assetId":int|null,"assetName":"str"|null,"timeRange":"str"|null,"fromDate":"str"|null,"toDate":"str"|null,"mode":"raw"}}
-
-Examples:
-CURRENT_STATE: asset=null,time=null
-INPUT: "air compressor last 5 days"
-OUTPUT: {"isOnTopic":true,"isComplete":true,"replyMessage":"","suggestedAction":"confirm_queue","suggestedOptions":[],"extractedParameters":{"assetId":2,"assetName":"Air Compressor Motor","timeRange":"5d","fromDate":null,"toDate":null,"mode":"raw"}}
-
-CURRENT_STATE: asset=Boiler Feed Pump Motor,time=null
-INPUT: "24 hours"
-OUTPUT: {"isOnTopic":true,"isComplete":true,"replyMessage":"","suggestedAction":"confirm_queue","suggestedOptions":[],"extractedParameters":{"assetId":1,"assetName":"Boiler Feed Pump Motor","timeRange":"24h","fromDate":null,"toDate":null,"mode":"raw"}}
-
-CURRENT_STATE: asset=Cooling Tower Fan Motor,time=5d
-INPUT: "change to air compressor"
-OUTPUT: {"isOnTopic":true,"isComplete":false,"replyMessage":"","suggestedAction":"select_timeframe","suggestedOptions":[],"extractedParameters":{"assetId":2,"assetName":"Air Compressor Motor","timeRange":null,"fromDate":null,"toDate":null,"mode":"raw"}}
-
-CURRENT_STATE: asset=null,time=null
-INPUT: "who won the match"
-OUTPUT: {"isOnTopic":false,"isComplete":false,"replyMessage":"","suggestedAction":"none","suggestedOptions":[],"extractedParameters":{"assetId":null,"assetName":null,"timeRange":null,"fromDate":null,"toDate":null,"mode":"raw"}}

@@ -9,6 +9,8 @@ TEMPLATE """<|im_start|>system
 
 PARAMETER temperature 0.01
 PARAMETER top_p 0.95
+PARAMETER num_ctx 512
+PARAMETER num_thread 2
 PARAMETER stop "<|im_end|>"
 PARAMETER stop "<|im_start|>"
 
