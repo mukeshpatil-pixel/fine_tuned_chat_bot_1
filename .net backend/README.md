@@ -21,7 +21,7 @@ A .NET 8 Web API built using Clean Architecture. The application processes user 
   "ApiKey": "",
   "Model": "qwen2.5:0.5b",
   "Temperature": 0.0,
-  "MaxTokens": 250
+    "MaxTokens": 110
 }
 ```
 

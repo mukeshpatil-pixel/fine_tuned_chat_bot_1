@@ -34,8 +34,8 @@ A production-grade, distributed industrial telemetry analytics and automated PDF
 | **Frontend** | React 18, Vite, Lucide Icons, Microsoft SignalR Client, Modern Vanilla CSS |
 | **Backend API** | .NET 9 ASP.NET Core Web API, SignalR Hubs, Background Hosted Services |
 | **PDF Engine** | QuestPDF (SkiaSharp with Linux font rendering support) |
-| **AI Inference** | Ollama Engine running `qwen2.5:0.5b` (Local CPU/GPU inference) |
-| **Message Queue** | RabbitMQ 3 (AMQP 5672 + Management Dashboard 15672) |
+| **AI Inference** | Ollama Engine running `qwen2.5:0.5b` for edge-friendly local inference |
+| **Message Queue** | RabbitMQ 3 (AMQP host 6772 -> container 5672 + Management Dashboard 15672) |
 | **Database** | TimescaleDB (PostgreSQL 16 + Timescale time-series hypertable extension) |
 | **Database Explorer** | Adminer Web UI |
 | **DevOps** | Docker, Docker Compose, Multi-stage Dockerfiles, Nginx Alpine |
@@ -100,9 +100,9 @@ npm run dev
 | **React Web App** | [http://localhost:5173](http://localhost:5173) | Main application UI & Chat |
 | **.NET Backend API** | [http://localhost:5000](http://localhost:5000) | REST API & SignalR WebSockets endpoint |
 | **RabbitMQ Management** | [http://localhost:15672](http://localhost:15672) | **User**: `guest` / **Pass**: `guest` |
-| **Adminer (Database GUI)** | [http://localhost:8080](http://localhost:8080) | **System**: PostgreSQL<br>**Server**: `timescaledb` (or `localhost`)<br>**User**: `iam_user` / **Pass**: `iam_pass`<br>**DB**: `iam_db` |
+| **Adminer (Database GUI)** | [http://localhost:8080](http://localhost:8080) | **System**: PostgreSQL<br>**Server**: `timescaledb`<br>**User**: `iam_user` / **Pass**: `iam_pass`<br>**DB**: `iam_db` |
 | **Ollama Inference Engine** | [http://localhost:11434](http://localhost:11434) | Local LLM inference server |
-| **TimescaleDB** | `localhost:5432` | PostgreSQL 16 time-series database |
+| **TimescaleDB** | `localhost:6432` -> container `5432` | PostgreSQL 16 time-series database |
 
 ---
 

@@ -36,6 +36,7 @@ public class IntentExtractionStep : IChatStep
 
     public async Task RunAsync(ChatRequestState state, CancellationToken ct)
     {
+        AssetDto? explicitAsset = null;
         try
         {
             // 1. Fetch available database catalog (Assets)
@@ -44,6 +45,9 @@ public class IntentExtractionStep : IChatStep
 
             string trimmed = (state.UserMessage ?? "").Trim();
             string lower = trimmed.ToLowerInvariant();
+
+            // An explicitly named asset takes precedence over the previous selection.
+            explicitAsset = FindAssetMention(trimmed, assets);
 
             // ========================================================
             // FAST-PATH: Sub-millisecond instant execution for edge UI
@@ -69,10 +73,23 @@ public class IntentExtractionStep : IChatStep
             {
                 state.IsOnTopic = true;
                 state.IsComplete = false;
-                state.ExtractedParameters = new ExtractedReportParametersDto();
-                state.SuggestedAction = "select_asset";
-                state.SuggestedOptions = assets.Select(a => a.Name).ToList();
-                state.Reply = "Sure! Which machine or asset would you like to configure instead?";
+                if (explicitAsset != null)
+                {
+                    state.ExtractedParameters = new ExtractedReportParametersDto
+                    {
+                        AssetId = explicitAsset.AssetId,
+                        AssetName = explicitAsset.Name,
+                        Mode = "raw"
+                    };
+                    AskForTimeframe(state);
+                }
+                else
+                {
+                    state.ExtractedParameters = new ExtractedReportParametersDto();
+                    state.SuggestedAction = "select_asset";
+                    state.SuggestedOptions = assets.Select(a => a.Name).ToList();
+                    state.Reply = "Sure! Which machine or asset would you like to configure instead?";
+                }
                 return;
             }
 
@@ -80,6 +97,32 @@ public class IntentExtractionStep : IChatStep
             if (lower.Contains("change timeframe") || lower.Contains("change time") || lower.Contains("change date") || 
                 lower.Contains("different timeframe") || lower.Contains("different time") || lower.Contains("new timeframe"))
             {
+                string? inlineTime = TryExtractTimeRange(lower);
+                var (inlineFrom, inlineTo) = TryExtractDateRange(trimmed);
+                if (string.IsNullOrWhiteSpace(inlineTime) && !string.IsNullOrWhiteSpace(inlineFrom))
+                {
+                    inlineTime = $"{inlineFrom.Split('T')[0]} to {inlineTo?.Split('T')[0] ?? "now"}";
+                }
+
+                if (!string.IsNullOrWhiteSpace(inlineTime) && state.PreviousParameters?.AssetId.HasValue == true)
+                {
+                    state.IsOnTopic = true;
+                    state.IsComplete = true;
+                    state.ExtractedParameters = new ExtractedReportParametersDto
+                    {
+                        AssetId = state.PreviousParameters.AssetId,
+                        AssetName = state.PreviousParameters.AssetName,
+                        TimeRange = inlineTime,
+                        FromDate = inlineFrom,
+                        ToDate = inlineTo,
+                        Mode = "raw"
+                    };
+                    state.SuggestedAction = "confirm_queue";
+                    state.SuggestedOptions = new List<string> { "Yes, Queue PDF Report", "Change Options" };
+                    state.Reply = $"I have updated your report for {state.PreviousParameters.AssetName} covering {inlineTime}. Would you like me to queue and generate this PDF report now?";
+                    return;
+                }
+
                 state.IsOnTopic = true;
                 state.IsComplete = false;
                 state.ExtractedParameters = new ExtractedReportParametersDto
@@ -115,16 +158,16 @@ public class IntentExtractionStep : IChatStep
 
             // 3. Direct click or natural language Timeframe when Asset is already selected
             string? fastTimeRange = TryExtractTimeRange(lower);
+            var (fastFrom, fastTo) = TryExtractDateRange(trimmed);
             if (string.IsNullOrWhiteSpace(fastTimeRange))
             {
-                var (fastFrom, fastTo) = TryExtractDateRange(state.UserMessage);
                 if (!string.IsNullOrWhiteSpace(fastFrom))
                 {
                     fastTimeRange = $"{fastFrom.Split('T')[0]} to {fastTo?.Split('T')[0] ?? "now"}";
                 }
             }
 
-            if (state.PreviousParameters?.AssetId.HasValue == true && state.PreviousParameters.AssetId > 0 && !string.IsNullOrWhiteSpace(fastTimeRange))
+            if (explicitAsset == null && state.PreviousParameters?.AssetId.HasValue == true && state.PreviousParameters.AssetId > 0 && !string.IsNullOrWhiteSpace(fastTimeRange))
             {
                 state.IsOnTopic = true;
                 state.IsComplete = true;
@@ -133,6 +176,8 @@ public class IntentExtractionStep : IChatStep
                     AssetId = state.PreviousParameters.AssetId,
                     AssetName = state.PreviousParameters.AssetName,
                     TimeRange = fastTimeRange,
+                    FromDate = fastFrom,
+                    ToDate = fastTo,
                     Mode = "raw"
                 };
                 state.SuggestedAction = "confirm_queue";
@@ -142,13 +187,7 @@ public class IntentExtractionStep : IChatStep
             }
 
             // 3b. One-shot Natural Language matching for known catalog assets + timeframes
-            var oneShotAsset = assets.FirstOrDefault(a => 
-                lower.Contains(a.Name.ToLowerInvariant()) ||
-                (lower.Contains("crusher") && a.Name.Contains("Crusher", StringComparison.OrdinalIgnoreCase)) ||
-                (lower.Contains("boiler") && a.Name.Contains("Boiler", StringComparison.OrdinalIgnoreCase)) ||
-                (lower.Contains("compressor") && a.Name.Contains("Compressor", StringComparison.OrdinalIgnoreCase)) ||
-                (lower.Contains("conveyor") && a.Name.Contains("Conveyor", StringComparison.OrdinalIgnoreCase)) ||
-                (lower.Contains("cooling") && a.Name.Contains("Cooling", StringComparison.OrdinalIgnoreCase)));
+            var oneShotAsset = explicitAsset;
 
             if (oneShotAsset != null && !string.IsNullOrWhiteSpace(fastTimeRange))
             {
@@ -159,6 +198,8 @@ public class IntentExtractionStep : IChatStep
                     AssetId = oneShotAsset.AssetId,
                     AssetName = oneShotAsset.Name,
                     TimeRange = fastTimeRange,
+                    FromDate = fastFrom,
+                    ToDate = fastTo,
                     Mode = "raw"
                 };
                 state.SuggestedAction = "confirm_queue";
@@ -167,15 +208,57 @@ public class IntentExtractionStep : IChatStep
                 return;
             }
 
+            if (oneShotAsset != null)
+            {
+                state.ExtractedParameters = new ExtractedReportParametersDto
+                {
+                    AssetId = oneShotAsset.AssetId,
+                    AssetName = oneShotAsset.Name,
+                    Mode = "raw"
+                };
+                AskForTimeframe(state);
+                return;
+            }
+
             // 4. Confirmation action ("Yes, Queue PDF Report", "ok lets do it", "generate report", etc.)
+            bool isNegative = lower == "no" || lower == "nope" || lower == "cancel" || lower == "stop" ||
+                              lower.Contains("do not") || lower.Contains("don't") || lower.Contains("not now") ||
+                              lower.Contains("dont");
             bool isConfirm = lower.Contains("yes, queue") || lower.Contains("yes please") || lower == "yes" || 
                              lower.Contains("queue") || lower.Contains("generate") || lower.Contains("lets do it") || 
                              lower.Contains("let's do it") || lower.Contains("do it") || lower.Contains("proceed") || 
                              lower.Contains("go ahead") || lower.Contains("confirm") || lower == "sure" || 
                              lower == "ok" || lower == "okay";
 
+            if (isNegative)
+            {
+                state.IsOnTopic = true;
+                state.IsComplete = false;
+                state.SuggestedAction = "select_asset";
+                state.SuggestedOptions = assets.Select(a => a.Name).ToList();
+                state.ExtractedParameters = new ExtractedReportParametersDto();
+                state.Reply = "Okay, I will not queue a report. Which machine would you like to configure next?";
+                return;
+            }
+
             if (isConfirm && state.PreviousParameters?.AssetId.HasValue == true && state.PreviousParameters.AssetId > 0)
             {
+                if (explicitAsset != null && explicitAsset.AssetId != state.PreviousParameters.AssetId)
+                {
+                    state.ExtractedParameters = new ExtractedReportParametersDto
+                    {
+                        AssetId = explicitAsset.AssetId, AssetName = explicitAsset.Name, Mode = "raw"
+                    };
+                    AskForTimeframe(state);
+                    return;
+                }
+                if (string.IsNullOrWhiteSpace(state.PreviousParameters.TimeRange) &&
+                    string.IsNullOrWhiteSpace(state.PreviousParameters.FromDate))
+                {
+                    state.ExtractedParameters = state.PreviousParameters;
+                    AskForTimeframe(state);
+                    return;
+                }
                 var assetId = state.PreviousParameters.AssetId.Value;
                 var assetName = state.PreviousParameters.AssetName ?? $"Asset-{assetId}";
                 var timeRange = state.PreviousParameters.TimeRange ?? "24h";
@@ -232,40 +315,33 @@ public class IntentExtractionStep : IChatStep
                 return;
             }
 
-            // 2. Build history context (filter out off-topic exchanges so they don't bias or confuse the LLM)
-            var cleanHistory = state.History?
-                .Where(h => {
-                    if (h.Role.Equals("assistant", StringComparison.OrdinalIgnoreCase) && 
-                        h.Content.Contains("I can only assist with industrial", StringComparison.OrdinalIgnoreCase))
-                    {
-                        return false;
-                    }
-                    if (!string.IsNullOrWhiteSpace(h.Metadata))
-                    {
-                        try
-                        {
-                            using var doc = System.Text.Json.JsonDocument.Parse(h.Metadata);
-                            if (doc.RootElement.TryGetProperty("isOnTopic", out var prop) && !prop.GetBoolean())
-                                return false;
-                        }
-                        catch { }
-                    }
-                    return true;
-                })
-                .ToList();
+            bool hasDomainHint = HasDomainHint(lower);
+            bool canUseTimeOnlyWithPreviousAsset = state.PreviousParameters?.AssetId.HasValue == true &&
+                state.PreviousParameters.AssetId > 0 &&
+                (!string.IsNullOrWhiteSpace(fastTimeRange) || !string.IsNullOrWhiteSpace(fastFrom));
+            if (!hasDomainHint && !canUseTimeOnlyWithPreviousAsset)
+            {
+                state.IsOnTopic = false;
+                state.IsComplete = false;
+                state.SuggestedAction = "none";
+                state.SuggestedOptions = new List<string>();
+                state.ExtractedParameters = new ExtractedReportParametersDto { Mode = "raw" };
+                state.Reply = OffTopicReply;
+                return;
+            }
 
-            string historyContext = cleanHistory != null && cleanHistory.Any()
-                ? string.Join("\n", cleanHistory.Select(h => $"{h.Role.ToUpper()}: {h.Content}"))
-                : "No prior history.";
-
-            // 3. Load & format Extractor System Prompt (Static - cached in Ollama KV memory)
+            // 5. Small-model fallback: send only current state and latest message.
             string systemPromptTemplate = await _promptProvider.GetPromptAsync("ExtractorPrompt", ct);
             string systemPrompt = systemPromptTemplate
                 .Replace("{AvailableAssetsJson}", availableAssetsJson);
 
-            string userContextMessage = $"[CONVERSATION HISTORY]:\n{historyContext}\n\n[LATEST USER INPUT]:\n{state.UserMessage}\n\n[DATE UTC]: {DateTime.UtcNow:yyyy-MM-dd}";
+            string currentAsset = state.PreviousParameters?.AssetName ?? "null";
+            string currentTime = state.PreviousParameters?.TimeRange
+                ?? (!string.IsNullOrWhiteSpace(state.PreviousParameters?.FromDate)
+                    ? $"{state.PreviousParameters.FromDate} to {state.PreviousParameters.ToDate ?? "now"}"
+                    : "null");
+            string userContextMessage = $"CURRENT_STATE: asset={currentAsset},time={currentTime}\nINPUT: {trimmed}\nDATE_UTC: {DateTime.UtcNow:yyyy-MM-dd}";
 
-            // 4. Pure LLM Call for every single message
             var result = await _llmService.GenerateJsonResponseAsync<ConversationalChatResultDto>(systemPrompt, userContextMessage, ct);
 
             if (result != null)
@@ -273,25 +349,24 @@ public class IntentExtractionStep : IChatStep
                 state.IsOnTopic = result.IsOnTopic;
                 state.IsComplete = result.IsComplete;
                 state.ExtractedParameters = result.ExtractedParameters ?? new ExtractedReportParametersDto();
-                state.Reply = result.ReplyMessage;
                 state.SuggestedAction = result.SuggestedAction;
                 state.SuggestedOptions = result.SuggestedOptions ?? new List<string>();
 
                 // Guard against false off-topic refusals if user asked for assets or mentioned a catalog asset
                 bool mentionsCatalogAsset = assets.Any(a => 
-                    state.UserMessage.Contains(a.Name, StringComparison.OrdinalIgnoreCase) ||
-                    a.Name.Contains(state.UserMessage.Trim(), StringComparison.OrdinalIgnoreCase) ||
-                    state.UserMessage.Contains("boiler", StringComparison.OrdinalIgnoreCase) ||
-                    state.UserMessage.Contains("compressor", StringComparison.OrdinalIgnoreCase) ||
-                    state.UserMessage.Contains("conveyor", StringComparison.OrdinalIgnoreCase) ||
-                    state.UserMessage.Contains("crusher", StringComparison.OrdinalIgnoreCase) ||
-                    state.UserMessage.Contains("cooling", StringComparison.OrdinalIgnoreCase) ||
+                    trimmed.Contains(a.Name, StringComparison.OrdinalIgnoreCase) ||
+                    a.Name.Contains(trimmed, StringComparison.OrdinalIgnoreCase) ||
+                    trimmed.Contains("boiler", StringComparison.OrdinalIgnoreCase) ||
+                    trimmed.Contains("compressor", StringComparison.OrdinalIgnoreCase) ||
+                    trimmed.Contains("conveyor", StringComparison.OrdinalIgnoreCase) ||
+                    trimmed.Contains("crusher", StringComparison.OrdinalIgnoreCase) ||
+                    trimmed.Contains("cooling", StringComparison.OrdinalIgnoreCase) ||
                     (!string.IsNullOrWhiteSpace(result.ExtractedParameters?.AssetName)));
 
-                bool asksAboutAssets = state.UserMessage.Contains("machine", StringComparison.OrdinalIgnoreCase) ||
-                                       state.UserMessage.Contains("asset", StringComparison.OrdinalIgnoreCase) ||
-                                       state.UserMessage.Contains("report", StringComparison.OrdinalIgnoreCase) ||
-                                       state.UserMessage.Contains("suggest", StringComparison.OrdinalIgnoreCase);
+                bool asksAboutAssets = trimmed.Contains("machine", StringComparison.OrdinalIgnoreCase) ||
+                                       trimmed.Contains("asset", StringComparison.OrdinalIgnoreCase) ||
+                                       trimmed.Contains("report", StringComparison.OrdinalIgnoreCase) ||
+                                       trimmed.Contains("suggest", StringComparison.OrdinalIgnoreCase);
 
                 if (!state.IsOnTopic && (mentionsCatalogAsset || asksAboutAssets))
                 {
@@ -301,6 +376,7 @@ public class IntentExtractionStep : IChatStep
                 // If off-topic, ensure reply is set and exit early
                 if (!state.IsOnTopic)
                 {
+                    state.IsComplete = false;
                     if (string.IsNullOrWhiteSpace(state.Reply))
                         state.Reply = OffTopicReply;
                     state.SuggestedAction = "none";
@@ -333,13 +409,13 @@ public class IntentExtractionStep : IChatStep
                 else if (mentionsCatalogAsset && (!state.ExtractedParameters.AssetId.HasValue || state.ExtractedParameters.AssetId == 0))
                 {
                     var matchedAsset = assets.FirstOrDefault(a => 
-                        state.UserMessage.Contains(a.Name, StringComparison.OrdinalIgnoreCase) ||
-                        a.Name.Contains(state.UserMessage.Trim(), StringComparison.OrdinalIgnoreCase) ||
-                        (state.UserMessage.Contains("boiler", StringComparison.OrdinalIgnoreCase) && a.Name.Contains("Boiler", StringComparison.OrdinalIgnoreCase)) ||
-                        (state.UserMessage.Contains("compressor", StringComparison.OrdinalIgnoreCase) && a.Name.Contains("Compressor", StringComparison.OrdinalIgnoreCase)) ||
-                        (state.UserMessage.Contains("conveyor", StringComparison.OrdinalIgnoreCase) && a.Name.Contains("Conveyor", StringComparison.OrdinalIgnoreCase)) ||
-                        (state.UserMessage.Contains("crusher", StringComparison.OrdinalIgnoreCase) && a.Name.Contains("Crusher", StringComparison.OrdinalIgnoreCase)) ||
-                        (state.UserMessage.Contains("cooling", StringComparison.OrdinalIgnoreCase) && a.Name.Contains("Cooling", StringComparison.OrdinalIgnoreCase)));
+                        trimmed.Contains(a.Name, StringComparison.OrdinalIgnoreCase) ||
+                        a.Name.Contains(trimmed, StringComparison.OrdinalIgnoreCase) ||
+                        (trimmed.Contains("boiler", StringComparison.OrdinalIgnoreCase) && a.Name.Contains("Boiler", StringComparison.OrdinalIgnoreCase)) ||
+                        (trimmed.Contains("compressor", StringComparison.OrdinalIgnoreCase) && a.Name.Contains("Compressor", StringComparison.OrdinalIgnoreCase)) ||
+                        (trimmed.Contains("conveyor", StringComparison.OrdinalIgnoreCase) && a.Name.Contains("Conveyor", StringComparison.OrdinalIgnoreCase)) ||
+                        (trimmed.Contains("crusher", StringComparison.OrdinalIgnoreCase) && a.Name.Contains("Crusher", StringComparison.OrdinalIgnoreCase)) ||
+                        (trimmed.Contains("cooling", StringComparison.OrdinalIgnoreCase) && a.Name.Contains("Cooling", StringComparison.OrdinalIgnoreCase)));
 
                     if (matchedAsset != null)
                     {
@@ -356,14 +432,14 @@ public class IntentExtractionStep : IChatStep
                 // 1b. Normalize TimeRange or DateRange from UserMessage if LLM left it null
                 if (string.IsNullOrWhiteSpace(state.ExtractedParameters.TimeRange) && string.IsNullOrWhiteSpace(state.ExtractedParameters.FromDate))
                 {
-                    string? parsedRange = TryExtractTimeRange(state.UserMessage);
+                    string? parsedRange = TryExtractTimeRange(trimmed);
                     if (!string.IsNullOrWhiteSpace(parsedRange))
                     {
                         state.ExtractedParameters.TimeRange = parsedRange;
                     }
                     else
                     {
-                        var (parsedFrom, parsedTo) = TryExtractDateRange(state.UserMessage);
+                        var (parsedFrom, parsedTo) = TryExtractDateRange(trimmed);
                         if (!string.IsNullOrWhiteSpace(parsedFrom))
                         {
                             state.ExtractedParameters.FromDate = parsedFrom;
@@ -387,16 +463,51 @@ public class IntentExtractionStep : IChatStep
                     state.SuggestedOptions = assets.Select(a => a.Name).ToList();
                 }
 
-                // 3. Ensure isComplete is synchronized when configuration is ready or action is confirm_queue
-                if (state.SuggestedAction == "confirm_queue" || 
-                    (state.ExtractedParameters.AssetId.HasValue && state.ExtractedParameters.AssetId > 0 &&
-                     (!string.IsNullOrWhiteSpace(state.ExtractedParameters.TimeRange) || !string.IsNullOrWhiteSpace(state.ExtractedParameters.FromDate))))
+                // Do not trust the model's completion flag without actual required parameters.
+                if (explicitAsset != null)
+                {
+                    bool changedAsset = state.ExtractedParameters.AssetId != explicitAsset.AssetId;
+                    state.ExtractedParameters.AssetId = explicitAsset.AssetId;
+                    state.ExtractedParameters.AssetName = explicitAsset.Name;
+                    if (changedAsset) state.ExtractedParameters.SignalIds = null;
+                }
+                bool hasAsset = assets.Any(a => a.AssetId == state.ExtractedParameters.AssetId);
+                if (!string.IsNullOrWhiteSpace(state.ExtractedParameters.TimeRange) &&
+                    !IsSupportedTimeRange(state.ExtractedParameters.TimeRange))
+                {
+                    state.ExtractedParameters.TimeRange = null;
+                }
+
+                bool userProvidedTimeframe = !string.IsNullOrWhiteSpace(fastTimeRange) ||
+                    !string.IsNullOrWhiteSpace(fastFrom);
+                bool previousHadTimeframe = !string.IsNullOrWhiteSpace(state.PreviousParameters?.TimeRange) ||
+                    !string.IsNullOrWhiteSpace(state.PreviousParameters?.FromDate);
+                if (!userProvidedTimeframe && !previousHadTimeframe)
+                {
+                    state.ExtractedParameters.TimeRange = null;
+                    state.ExtractedParameters.FromDate = null;
+                    state.ExtractedParameters.ToDate = null;
+                }
+
+                bool hasTimeframe = !string.IsNullOrWhiteSpace(state.ExtractedParameters.TimeRange) ||
+                    !string.IsNullOrWhiteSpace(state.ExtractedParameters.FromDate);
+                state.IsComplete = hasAsset && hasTimeframe;
+                if (hasAsset && !hasTimeframe)
+                {
+                    AskForTimeframe(state);
+                }
+                else if (!hasAsset)
+                {
+                    state.SuggestedAction = "select_asset";
+                    state.SuggestedOptions = assets.Select(a => a.Name).ToList();
+                    state.Reply = "Which machine or asset would you like a report for?";
+                }
+                else
                 {
                     state.IsComplete = true;
                     state.SuggestedAction = "confirm_queue";
                     state.SuggestedOptions = new List<string> { "Yes, Queue PDF Report", "Change Options" };
 
-                    if (string.IsNullOrWhiteSpace(state.Reply) || state.Reply.Contains("What timeframe", StringComparison.OrdinalIgnoreCase))
                     {
                         string rangeDisplay;
                         if (!string.IsNullOrWhiteSpace(state.ExtractedParameters.TimeRange))
@@ -415,6 +526,15 @@ public class IntentExtractionStep : IChatStep
             }
             else
             {
+                if (explicitAsset != null)
+                {
+                    state.ExtractedParameters = new ExtractedReportParametersDto
+                    {
+                        AssetId = explicitAsset.AssetId, AssetName = explicitAsset.Name, Mode = "raw"
+                    };
+                    AskForTimeframe(state);
+                    return;
+                }
                 // Graceful fallback only if LLM API request fails
                 state.IsOnTopic = true;
                 state.IsComplete = false;
@@ -426,9 +546,71 @@ public class IntentExtractionStep : IChatStep
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to execute LLM intent extraction call in IntentExtractionStep");
+            if (explicitAsset != null)
+            {
+                state.ExtractedParameters = new ExtractedReportParametersDto
+                {
+                    AssetId = explicitAsset.AssetId, AssetName = explicitAsset.Name, Mode = "raw"
+                };
+                AskForTimeframe(state);
+                return;
+            }
             state.IsOnTopic = true;
             state.Reply = "I'm having trouble processing your request right now. Could you please try again?";
         }
+    }
+
+    private static void AskForTimeframe(ChatRequestState state)
+    {
+        state.IsOnTopic = true;
+        state.IsComplete = false;
+        state.SuggestedAction = "select_timeframe";
+        state.SuggestedOptions = new List<string> { "24h", "5d", "14d", "30d" };
+        state.Reply = $"What timeframe would you like to inspect for {state.ExtractedParameters?.AssetName ?? "this machine"}?";
+    }
+
+    private static AssetDto? FindAssetMention(string text, IReadOnlyList<AssetDto> assets)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+
+        string lower = text.ToLowerInvariant();
+        return assets.FirstOrDefault(a =>
+            lower.Contains(a.Name.ToLowerInvariant()) ||
+            ((lower.Contains("crusher") || lower.Contains("crushr") || lower.Contains("cushr")) && a.Name.Contains("Crusher", StringComparison.OrdinalIgnoreCase)) ||
+            ((lower.Contains("boiler") || lower.Contains("boilr") || lower.Contains("bfp") || lower.Contains("feed pump")) && a.Name.Contains("Boiler", StringComparison.OrdinalIgnoreCase)) ||
+            ((lower.Contains("compressor") || lower.Contains("compresor") || lower.Contains("comp motor") || lower.Contains("air comp")) && a.Name.Contains("Compressor", StringComparison.OrdinalIgnoreCase)) ||
+            ((lower.Contains("conveyor") || lower.Contains("conveior") || lower.Contains("conveyr")) && a.Name.Contains("Conveyor", StringComparison.OrdinalIgnoreCase)) ||
+            ((lower.Contains("cooling") || lower.Contains("coling") || lower.Contains("tower fan")) && a.Name.Contains("Cooling", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private static bool IsSupportedTimeRange(string timeRange)
+    {
+        if (string.IsNullOrWhiteSpace(timeRange)) return false;
+
+        var match = System.Text.RegularExpressions.Regex.Match(timeRange.Trim(), @"^(\d+)(h|d)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (!match.Success) return false;
+
+        if (!int.TryParse(match.Groups[1].Value, out int amount)) return false;
+        string unit = match.Groups[2].Value.ToLowerInvariant();
+
+        return unit == "h"
+            ? amount > 0 && amount <= 24 * 365
+            : amount > 0 && amount <= 365;
+    }
+
+    private static bool HasDomainHint(string lowerText)
+    {
+        if (string.IsNullOrWhiteSpace(lowerText)) return false;
+
+        string[] hints =
+        {
+            "asset", "machine", "motor", "motr", "moter", "pump", "pmp", "compressor", "compresor", "conveyor", "conveior",
+            "conveyr", "cooling", "coling", "crusher", "crushr", "cushr",
+            "boiler", "boilr", "bfp", "fan", "feed", "report", "reprt", "genrate", "pdf", "telemetry", "sensor", "sensr",
+            "signal", "measurement", "measurements", "inspect", "timeframe", "period", "data", "reading", "readings", "alert", "event"
+        };
+
+        return hints.Any(lowerText.Contains);
     }
 
     private static string? TryExtractTimeRange(string text)
@@ -436,16 +618,16 @@ public class IntentExtractionStep : IChatStep
         if (string.IsNullOrWhiteSpace(text)) return null;
         string t = text.Trim().ToLowerInvariant();
 
-        // Hours: e.g. "last 24 hours", "24h", "12 hours"
-        var hourMatch = System.Text.RegularExpressions.Regex.Match(t, @"(?:last\s+|past\s+)?(\d+)\s*(?:hours?|h\b)");
+        // Hours: e.g. "last 24 hours", "24 hrs", "24h", "12 hours"
+        var hourMatch = System.Text.RegularExpressions.Regex.Match(t, @"(?:last\s+|past\s+)?(\d+)\s*(?:hours?|hrs?|hr\b|h\b)");
         if (hourMatch.Success) return $"{hourMatch.Groups[1].Value}h";
 
-        // Days: e.g. "for last 3 days", "3 days", "i said 3 days", "5d", "last 2 days"
-        var dayMatch = System.Text.RegularExpressions.Regex.Match(t, @"(?:for\s+|last\s+|past\s+|said\s+)?(\d+)\s*(?:days?|d\b)");
+        // Days: e.g. "for last 3 days", "3 days", "i said 3 days", "5d", "last 2 days", "5 dais"
+        var dayMatch = System.Text.RegularExpressions.Regex.Match(t, @"(?:for\s+|last\s+|past\s+|said\s+)?(\d+)\s*(?:days?|dais?|d\b)");
         if (dayMatch.Success) return $"{dayMatch.Groups[1].Value}d";
 
-        // Weeks: e.g. "last 2 weeks", "2w", "1 week"
-        var weekMatch = System.Text.RegularExpressions.Regex.Match(t, @"(?:last\s+|past\s+)?(\d+)\s*(?:weeks?|w\b)");
+        // Weeks: e.g. "last 2 weeks", "2w", "1 week", "2 weks"
+        var weekMatch = System.Text.RegularExpressions.Regex.Match(t, @"(?:last\s+|past\s+)?(\d+)\s*(?:weeks?|weks?|w\b)");
         if (weekMatch.Success)
         {
             if (int.TryParse(weekMatch.Groups[1].Value, out int w))
@@ -460,9 +642,10 @@ public class IntentExtractionStep : IChatStep
                 return $"{m * 30}d";
         }
 
-        if (t.Contains("today") || t.Contains("yesterday") || t.Contains("1 day")) return "24h";
-        if (t.Contains("a week") || t.Contains("one week")) return "7d";
-        if (t.Contains("a month") || t.Contains("one month")) return "30d";
+        if (t.Contains("daily") || t.Contains("today") || t.Contains("yesterday") || t.Contains("1 day")) return "24h";
+        if (t.Contains("weekly") || t.Contains("a week") || t.Contains("one week") || t.Contains("1 week")) return "7d";
+        if (t.Contains("bi-weekly") || t.Contains("biweekly") || t.Contains("fortnight") || t.Contains("fortnt") || t.Contains("two weeks") || t.Contains("2 weks")) return "14d";
+        if (t.Contains("monthly") || t.Contains("a month") || t.Contains("one month")) return "30d";
 
         // Bare number in context e.g. "3" or "2"
         if (int.TryParse(t, out int bareNum) && bareNum > 0 && bareNum <= 365)

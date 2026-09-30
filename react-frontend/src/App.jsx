@@ -792,10 +792,10 @@ function App() {
               <span className={`dot ${wsConnected ? '' : 'danger'}`}></span> WebSockets ({wsConnected ? 'Connected' : 'Connecting... (Click to Retry)'})
             </span>
             <span className="system-pill active">
-              <span className="dot"></span> RabbitMQ Broker (5672)
+              <span className="dot"></span> RabbitMQ Broker (host 6772, container 5672)
             </span>
             <span className="system-pill">
-              <span className="dot db"></span> PostgreSQL (5432)
+              <span className="dot db"></span> PostgreSQL (host 6432, container 5432)
             </span>
             <span className="system-pill">
               <span className="dot api"></span> .NET API (5000)

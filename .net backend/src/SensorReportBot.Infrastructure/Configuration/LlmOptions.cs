@@ -8,5 +8,5 @@ public class LlmOptions
     public string ApiKey { get; set; } = "";
     public string Model { get; set; } = "qwen2.5:0.5b";
     public double Temperature { get; set; } = 0.0;
-    public int MaxTokens { get; set; } = 250;
+    public int MaxTokens { get; set; } = 110;
 }
