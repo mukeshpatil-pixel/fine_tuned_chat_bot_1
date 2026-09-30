@@ -688,7 +688,7 @@ function App() {
               <div className="sidebar-queue-empty">
                 <Clock size={24} className="empty-icon-muted" />
                 <p>Queue is empty</p>
-                <span>Click "Queue Full PDF" to generate unaggregated report asynchronously</span>
+                <span>Click "Queue PDF Report" to generate unaggregated report asynchronously</span>
               </div>
             ) : (
               <div className="sidebar-queue-list">
@@ -819,11 +819,11 @@ function App() {
                     className="btn btn-primary" 
                     onClick={handleQueuePdf}
                     disabled={isQueueing || !selectedAssetId}
-                    title={includeFullRawData ? "Queue report with all unaggregated data rows" : "Queue report with graphs & trend curves only"}
+                    title={includeFullRawData ? "Queue report with up to 2,880 latest raw readings per signal" : "Queue report with graphs & trend curves only"}
                     style={{ width: '100%', justifyContent: 'center', padding: '0.75rem 1rem', fontSize: '0.925rem' }}
                   >
                     <ListOrdered size={16} />
-                    {isQueueing ? "Enqueuing PDF Job..." : (includeFullRawData ? "Queue Full PDF Report (All Rows)" : "Queue Graphs & Trends PDF Report")}
+                    {isQueueing ? "Enqueuing PDF Job..." : (includeFullRawData ? "Queue PDF Report (Latest Raw Rows)" : "Queue Graphs & Trends PDF Report")}
                   </button>
                 </div>
               </div>
@@ -833,11 +833,11 @@ function App() {
                 <div className="mode-info">
                   <div className="mode-title-row">
                     {includeFullRawData ? <Database size={16} className="mode-icon text-indigo" /> : <TrendingUp size={16} className="mode-icon text-amber" />}
-                    <span className="mode-title">Report Content: <strong>{includeFullRawData ? "Full Data Table (All Rows)" : "Graphs & Trends Only"}</strong></span>
+                    <span className="mode-title">Report Content: <strong>{includeFullRawData ? "Latest Raw Readings" : "Graphs & Trends Only"}</strong></span>
                   </div>
                   <div className="mode-subtitle">
                     {includeFullRawData 
-                      ? "PDF will include summary metrics plus complete chronological raw data rows on subsequent pages." 
+                      ? "PDF includes statistics for all available readings in the requested period and up to 2,880 latest raw readings per signal, preserving recorded timestamps."
                       : "PDF will include summary metrics & enlarged trend curves, skipping raw data table rows."}
                   </div>
                 </div>
@@ -1189,7 +1189,7 @@ function App() {
                               </div>
                             )}
                             {m.extractedParameters.mode && (
-                              <div className="param-chip">Format: <strong>{m.extractedParameters.mode === 'raw' ? 'Full Rows' : 'Graphs Only'}</strong></div>
+                              <div className="param-chip">Format: <strong>{m.extractedParameters.mode === 'raw' ? 'Latest Raw Rows' : 'Graphs Only'}</strong></div>
                             )}
                           </div>
 

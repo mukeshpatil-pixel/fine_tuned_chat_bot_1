@@ -54,7 +54,7 @@ public class SignalSummaryDto
     public double LowestValue { get; set; }
     public int TotalReadings { get; set; }
     public int ExcursionCount { get; set; }
-    public bool HasViolation => PeakValue > DesignMax || LowestValue < DesignMin;
+    public bool HasViolation => TotalReadings > 0 && (PeakValue > DesignMax || LowestValue < DesignMin);
     public List<SignalDataPointDto> DataPoints { get; set; } = new();
 }
 

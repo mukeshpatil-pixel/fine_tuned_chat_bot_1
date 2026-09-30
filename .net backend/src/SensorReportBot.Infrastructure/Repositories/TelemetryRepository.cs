@@ -64,8 +64,8 @@ public class TelemetryRepository : ITelemetryRepository
         List<SignalDto> targetSignals;
         if (request.SignalIds != null && request.SignalIds.Count > 0)
         {
-            const string sigSql = "SELECT signal_id AS SignalId, asset_id AS AssetId, name AS Name, unit AS Unit, min_value AS MinValue, max_value AS MaxValue FROM signals WHERE signal_id = ANY(@Ids);";
-            var sigs = await conn.QueryAsync<SignalDto>(sigSql, new { Ids = request.SignalIds.ToArray() });
+            const string sigSql = "SELECT signal_id AS SignalId, asset_id AS AssetId, name AS Name, unit AS Unit, min_value AS MinValue, max_value AS MaxValue FROM signals WHERE asset_id = @AssetId AND signal_id = ANY(@Ids) ORDER BY signal_id;";
+            var sigs = await conn.QueryAsync<SignalDto>(sigSql, new { request.AssetId, Ids = request.SignalIds.ToArray() });
             targetSignals = sigs.ToList();
         }
         else
@@ -79,16 +79,6 @@ public class TelemetryRepository : ITelemetryRepository
         // Determine Time Range
         DateTime toTime = request.To ?? DateTime.UtcNow;
         DateTime fromTime = request.From ?? toTime.AddDays(-7);
-
-        // Adjust if requested date is outside recorded dataset
-        const string maxDateSql = "SELECT COALESCE(MAX(time), now()) FROM signal_data WHERE signal_id = ANY(@Ids);";
-        var maxTimeRecorded = await conn.QueryFirstOrDefaultAsync<DateTime>(maxDateSql, new { Ids = signalIds });
-        if (toTime > maxTimeRecorded && maxTimeRecorded != default)
-        {
-            var span = toTime - fromTime;
-            toTime = maxTimeRecorded;
-            fromTime = toTime - span;
-        }
 
         var report = new ReportDataDto
         {
@@ -263,15 +253,22 @@ public class TelemetryRepository : ITelemetryRepository
             insights.Add("Zero critical severity threshold events were triggered during this inspection interval.");
         }
 
+        if (!report.Signals.Any(s => s.TotalReadings > 0))
+        {
+            report.HealthStatus = "No telemetry";
+            insights.Clear();
+            insights.Add("No telemetry was recorded for the selected signals in the requested timeframe. Health cannot be assessed from telemetry.");
+        }
+
         var breachedSignals = report.Signals.Where(s => s.HasViolation).ToList();
         if (breachedSignals.Any())
         {
             var names = string.Join(", ", breachedSignals.Take(3).Select(s => s.Name));
             insights.Add($"Limit exceedances detected on: {names}. Peak values exceeded nominal operational limits.");
         }
-        else
+        else if (report.Signals.Any(s => s.TotalReadings > 0))
         {
-            insights.Add("All monitored telemetry channels remained within manufacturer engineering boundaries.");
+            insights.Add("Selected channels with recorded data remained within configured limits; asset-wide alerts and events may concern other channels.");
         }
 
         if (report.Events.Any())

@@ -61,12 +61,12 @@ public class QuestPdfReportService : IPdfReportService
 
             row.ConstantItem(120).Column(col =>
             {
-                col.Item().AlignRight().Text($"Report ID: REP-{DateTime.UtcNow.Ticks % 1000000:D6}").FontSize(8).FontColor(Colors.Grey.Medium);
+                col.Item().AlignRight().Text($"Report ID: REP-{data.GeneratedAt.Ticks % 1000000:D6}").FontSize(8).FontColor(Colors.Grey.Medium);
                 col.Item().AlignRight().PaddingTop(4).Container()
                     .Background(data.HealthScore >= 80 ? Colors.Green.Lighten5 : (data.HealthScore >= 60 ? Colors.Amber.Lighten5 : Colors.Red.Lighten5))
                     .Border(1)
                     .BorderColor(data.HealthScore >= 80 ? Colors.Green.Medium : (data.HealthScore >= 60 ? Colors.Amber.Medium : Colors.Red.Medium))
-                    .PaddingHorizontal(8).PaddingVertical(3).Text($"{data.HealthScore}% HEALTH ({data.HealthStatus.ToUpper()})")
+                    .PaddingHorizontal(8).PaddingVertical(3).Text(data.Signals.Any(s => s.TotalReadings > 0) ? $"{data.HealthScore}% HEALTH ({data.HealthStatus.ToUpper()})" : "NO TELEMETRY")
                     .FontSize(8.5f).Bold()
                     .FontColor(data.HealthScore >= 80 ? Colors.Green.Darken2 : (data.HealthScore >= 60 ? Colors.Amber.Darken2 : Colors.Red.Darken2));
             });
@@ -86,12 +86,22 @@ public class QuestPdfReportService : IPdfReportService
             {
                 ComposeKpiCard(row.RelativeItem(), "Signals Monitored", data.Signals.Count.ToString(), Colors.Blue.Lighten5, Colors.Blue.Darken2);
                 row.ConstantItem(8);
-                ComposeKpiCard(row.RelativeItem(), "Threshold Breaches", data.Signals.Count(s => s.HasViolation).ToString(), data.Signals.Any(s => s.HasViolation) ? Colors.Red.Lighten5 : Colors.Green.Lighten5, data.Signals.Any(s => s.HasViolation) ? Colors.Red.Darken2 : Colors.Green.Darken2);
+                ComposeKpiCard(row.RelativeItem(), "Signals Breaching Limits", data.Signals.Count(s => s.HasViolation).ToString(), data.Signals.Any(s => s.HasViolation) ? Colors.Red.Lighten5 : Colors.Green.Lighten5, data.Signals.Any(s => s.HasViolation) ? Colors.Red.Darken2 : Colors.Green.Darken2);
                 row.ConstantItem(8);
-                ComposeKpiCard(row.RelativeItem(), "Excursion Events", data.Events.Count.ToString(), Colors.Orange.Lighten5, Colors.Orange.Darken2);
+                ComposeKpiCard(row.RelativeItem(), "Asset-wide Events", data.Events.Count.ToString(), Colors.Orange.Lighten5, Colors.Orange.Darken2);
                 row.ConstantItem(8);
-                ComposeKpiCard(row.RelativeItem(), "System Alerts", data.Alerts.Count.ToString(), Colors.Purple.Lighten5, Colors.Purple.Darken2);
+                ComposeKpiCard(row.RelativeItem(), "Asset-wide Alerts", data.Alerts.Count.ToString(), Colors.Purple.Lighten5, Colors.Purple.Darken2);
             });
+
+            col.Item().PaddingTop(5).Text("Limits apply to selected signals. Events, alerts and the alert-based health score cover the whole asset.").FontSize(8);
+            col.Item().PaddingTop(4).Text($"Requested window (UTC): {data.From:yyyy-MM-dd HH:mm} to {data.To:yyyy-MM-dd HH:mm}. Statistics use only available readings within this window.").FontSize(8);
+            foreach (var signal in data.Signals)
+            {
+                var coverage = signal.DataPoints.Count == 0
+                    ? $"{signal.Name}: no telemetry in requested window."
+                    : $"{signal.Name}: {signal.DataPoints.First().Time:yyyy-MM-dd HH:mm} to {signal.DataPoints.Last().Time:yyyy-MM-dd HH:mm} UTC ({signal.TotalReadings:N0} readings).";
+                col.Item().Text(coverage).FontSize(7.5f).FontColor(Colors.Grey.Darken1);
+            }
 
             // 2. Diagnostic & Engineering Insights
             if (data.KeyInsights.Any())
@@ -103,7 +113,7 @@ public class QuestPdfReportService : IPdfReportService
                     .Column(c =>
                     {
                         c.Item().Text("DIAGNOSTIC & ENGINEERING INSIGHTS").FontSize(9.5f).Bold().FontColor(Colors.Indigo.Darken2);
-                        foreach (var insight in data.KeyInsights.Take(3))
+                        foreach (var insight in data.KeyInsights)
                         {
                             c.Item().PaddingTop(2).Row(r =>
                             {
@@ -149,13 +159,15 @@ public class QuestPdfReportService : IPdfReportService
                     table.Cell().Background(bg).Padding(3.5f).Text(s.Name).SemiBold().FontSize(8);
                     table.Cell().Background(bg).Padding(3.5f).Text(s.Unit).FontSize(8);
                     table.Cell().Background(bg).Padding(3.5f).Text($"{s.DesignMin} - {s.DesignMax}").FontSize(8);
-                    table.Cell().Background(bg).Padding(3.5f).Text(s.LowestValue.ToString("F1")).FontSize(8);
-                    table.Cell().Background(bg).Padding(3.5f).Text(s.PeakValue.ToString("F1")).FontSize(8);
-                    table.Cell().Background(bg).Padding(3.5f).Text(s.AvgValue.ToString("F1")).FontSize(8);
+                    table.Cell().Background(bg).Padding(3.5f).Text(s.TotalReadings == 0 ? "N/A" : s.LowestValue.ToString("F1")).FontSize(8);
+                    table.Cell().Background(bg).Padding(3.5f).Text(s.TotalReadings == 0 ? "N/A" : s.PeakValue.ToString("F1")).FontSize(8);
+                    table.Cell().Background(bg).Padding(3.5f).Text(s.TotalReadings == 0 ? "N/A" : s.AvgValue.ToString("F1")).FontSize(8);
                     table.Cell().Background(bg).Padding(3.5f).Text(s.TotalReadings.ToString("N0")).FontSize(8);
 
                     var statusCell = table.Cell().Background(bg).Padding(3.5f);
-                    if (s.HasViolation)
+                    if (s.TotalReadings == 0)
+                        statusCell.Text("NO DATA").FontSize(8).FontColor(Colors.Grey.Darken1);
+                    else if (s.HasViolation)
                         statusCell.Text("BREACHED").Bold().FontSize(8).FontColor(Colors.Red.Darken2);
                     else
                         statusCell.Text("NORMAL").Bold().FontSize(8).FontColor(Colors.Green.Darken2);
@@ -163,7 +175,7 @@ public class QuestPdfReportService : IPdfReportService
             });
 
             // 4. Trend Graphs ("some graphs") on Page 1
-            var chartsToShow = data.Signals.Where(s => s.DataPoints.Any()).Take(4).ToList();
+            var chartsToShow = data.Signals.Where(s => s.DataPoints.Any()).ToList();
             if (chartsToShow.Any())
             {
                 col.Item().PaddingTop(12).Text("SIGNAL TREND OVERVIEW (UNAGGREGATED PROFILES)").FontSize(10.5f).Bold().FontColor(Colors.Indigo.Darken2);
@@ -171,7 +183,7 @@ public class QuestPdfReportService : IPdfReportService
                 for (int i = 0; i < chartsToShow.Count; i += 2)
                 {
                     int chartIdx = i;
-                    col.Item().PaddingTop(4).Row(row =>
+                    col.Item().ShowEntire().PaddingTop(4).Row(row =>
                     {
                         var s1 = chartsToShow[chartIdx];
                         row.RelativeItem().Container()
@@ -180,7 +192,7 @@ public class QuestPdfReportService : IPdfReportService
                             .Column(c =>
                             {
                                 c.Item().Text($"{s1.Name} ({s1.Unit}) • Peak: {s1.PeakValue:F1} | Limit: {s1.DesignMax}").Bold().FontSize(7.5f);
-                                c.Item().Height(52).Svg(GenerateSvgTrendChart(s1, 240, 52));
+                                ComposeTrendChart(c.Item(), s1, 240, 45);
                             });
 
                         if (chartIdx + 1 < chartsToShow.Count)
@@ -193,7 +205,7 @@ public class QuestPdfReportService : IPdfReportService
                                 .Column(c =>
                                 {
                                     c.Item().Text($"{s2.Name} ({s2.Unit}) • Peak: {s2.PeakValue:F1} | Limit: {s2.DesignMax}").Bold().FontSize(7.5f);
-                                    c.Item().Height(52).Svg(GenerateSvgTrendChart(s2, 240, 52));
+                                    ComposeTrendChart(c.Item(), s2, 240, 45);
                                 });
                         }
                     });
@@ -203,8 +215,10 @@ public class QuestPdfReportService : IPdfReportService
             // Excursion Events Table (if any)
             if (data.Events.Any())
             {
-                col.Item().PaddingTop(12).Text($"EXCURSION EVENTS LOG ({data.Events.Count} Recorded)").FontSize(10.5f).Bold().FontColor(Colors.Indigo.Darken2);
-                col.Item().PaddingTop(3).Table(table =>
+                col.Item().ShowEntire().Column(section =>
+                {
+                section.Item().PaddingTop(12).Text($"EXCURSION EVENTS LOG (Asset-wide: {data.Events.Count} recorded; latest {Math.Min(6, data.Events.Count)} shown)").FontSize(10.5f).Bold().FontColor(Colors.Indigo.Darken2);
+                section.Item().PaddingTop(3).Table(table =>
                 {
                     table.ColumnsDefinition(columns =>
                     {
@@ -236,13 +250,16 @@ public class QuestPdfReportService : IPdfReportService
                         table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten3).Padding(3).Text(evt.Threshold?.ToString("F1") ?? "-").FontSize(7.5f);
                     }
                 });
+                });
             }
 
             // Alerts Table (if any)
             if (data.Alerts.Any())
             {
-                col.Item().PaddingTop(12).Text($"SYSTEM ALERTS AUDIT ({data.Alerts.Count} Recorded)").FontSize(10.5f).Bold().FontColor(Colors.Indigo.Darken2);
-                col.Item().PaddingTop(3).Table(table =>
+                col.Item().ShowEntire().Column(section =>
+                {
+                section.Item().PaddingTop(12).Text($"SYSTEM ALERTS AUDIT (Asset-wide: {data.Alerts.Count} recorded; latest {Math.Min(6, data.Alerts.Count)} shown)").FontSize(10.5f).Bold().FontColor(Colors.Indigo.Darken2);
+                section.Item().PaddingTop(3).Table(table =>
                 {
                     table.ColumnsDefinition(columns =>
                     {
@@ -274,6 +291,7 @@ public class QuestPdfReportService : IPdfReportService
                         table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten3).Padding(3).Text(al.Status).FontSize(7.5f);
                     }
                 });
+                });
             }
 
             // ==========================================
@@ -281,10 +299,9 @@ public class QuestPdfReportService : IPdfReportService
             // ==========================================
             if (data.IncludeFullRawData)
             {
-                col.Item().PageBreak();
-
-                col.Item().Text("RAW TELEMETRY READINGS LOG (UNAGGREGATED)").FontSize(13).Bold().FontColor(Colors.Indigo.Darken2);
-                col.Item().PaddingTop(2).Text("Chronological sequence of unaggregated sensor measurements. Each value is presented exactly as recorded in signal_data.")
+                // Continue after the audit tables without leaving a mostly empty page.
+                col.Item().EnsureSpace(150).PaddingTop(12).Text("RAW TELEMETRY READINGS LOG (UNAGGREGATED)").FontSize(13).Bold().FontColor(Colors.Indigo.Darken2);
+                col.Item().PaddingTop(2).Text("Chronological sequence of unaggregated sensor measurements. Values are displayed to two decimal places. Up to 2,880 latest readings per signal are printed; statistics cover all available readings in the requested window.")
                     .FontSize(8.5f).FontColor(Colors.Grey.Darken1);
 
                 foreach (var sig in data.Signals)
@@ -301,7 +318,7 @@ public class QuestPdfReportService : IPdfReportService
                                 c.Item().Text($"Operating Limits: [{sig.DesignMin:F1} to {sig.DesignMax:F1}]  •  Observed: Min {sig.LowestValue:F2}, Max {sig.PeakValue:F2}, Mean {sig.AvgValue:F2}")
                                     .FontSize(8).FontColor(Colors.Grey.Darken2);
                             });
-                            r.ConstantItem(240).AlignRight().Text($"All {sig.DataPoints.Count:N0} Raw Readings").Bold().FontSize(9.0f).FontColor(Colors.Indigo.Darken2);
+                            r.ConstantItem(180).AlignRight().Text($"{Math.Min(2880, sig.DataPoints.Count):N0} of {sig.DataPoints.Count:N0} readings printed").Bold().FontSize(9.0f).FontColor(Colors.Indigo.Darken2);
                         });
 
                     if (sig.DataPoints.Count == 0)
@@ -320,10 +337,10 @@ public class QuestPdfReportService : IPdfReportService
                     }
                     else
                     {
-                        // Print consecutive 1-minute interval readings (latest 48h operational block)
+                        // Print raw readings at their recorded timestamps (latest 48h operational block)
                         pointsToPrint = sig.DataPoints.TakeLast(maxRowsPerSignal).ToList();
 
-                        col.Item().PaddingTop(2).Text($"Displaying latest {pointsToPrint.Count:N0} consecutive 1-minute interval readings ({pointsToPrint.First().Time:yyyy-MM-dd HH:mm} to {pointsToPrint.Last().Time:yyyy-MM-dd HH:mm} UTC). Complete statistical envelope and trend graphs encompass all {sig.DataPoints.Count:N0} measurements across the entire timeframe.")
+                        col.Item().PaddingTop(2).Text($"Displaying latest {pointsToPrint.Count:N0} raw readings at their recorded timestamps ({pointsToPrint.First().Time:yyyy-MM-dd HH:mm} to {pointsToPrint.Last().Time:yyyy-MM-dd HH:mm} UTC). Complete statistical envelope and trend graphs encompass all {sig.DataPoints.Count:N0} measurements across the entire timeframe.")
                             .FontSize(7.5f).Italic().FontColor(Colors.Grey.Darken1);
                     }
 
@@ -432,7 +449,7 @@ public class QuestPdfReportService : IPdfReportService
 
                             if (sig.DataPoints.Any())
                             {
-                                c.Item().PaddingTop(6).Height(75).Svg(GenerateSvgTrendChart(sig, 450, 75));
+                                ComposeTrendChart(c.Item().PaddingTop(6), sig, 450, 90);
                             }
                             else
                             {
@@ -471,6 +488,20 @@ public class QuestPdfReportService : IPdfReportService
         });
     }
 
+    private void ComposeTrendChart(IContainer container, SignalSummaryDto sig, int width, int height)
+    {
+        // QuestPDF renders SVG paths, while native text keeps axis labels visible in the PDF.
+        var low = Math.Min(sig.DesignMin, sig.DataPoints.Min(p => p.Value));
+        var high = Math.Max(sig.DesignMax, sig.DataPoints.Max(p => p.Value));
+        if (Math.Abs(high - low) < 0.001) high += 1;
+        container.Column(c =>
+        {
+            c.Item().Text($"Y: {low:F1} to {high:F1} {sig.Unit} | red dashed: upper limit {sig.DesignMax:F1}").FontSize(6.5f);
+            c.Item().Height(height).Svg(GenerateSvgTrendChart(sig, width, height));
+            c.Item().Text($"Time (UTC): {sig.DataPoints.First().Time:MM-dd HH:mm} to {sig.DataPoints.Last().Time:MM-dd HH:mm}").FontSize(6.5f);
+        });
+    }
+
     private string GenerateSvgTrendChart(SignalSummaryDto sig, int width = 240, int height = 52)
     {
         try
@@ -502,25 +533,15 @@ public class QuestPdfReportService : IPdfReportService
                 return padTop + chartH - (norm * chartH);
             };
 
-            int stride = Math.Max(1, points.Count / 250);
-            int totalVisualSteps = ((points.Count - 1) / stride);
-            float step = totalVisualSteps > 0 ? chartW / totalVisualSteps : 0;
             var polyPoints = new StringBuilder();
-            int stepIdx = 0;
-            for (int i = 0; i < points.Count; i += stride)
+            double timeSpan = (points.Last().Time - points.First().Time).TotalSeconds;
+            foreach (var point in points)
             {
-                float x = padLeft + (stepIdx++ * step);
-                float y = getY(points[i].Value);
-                polyPoints.Append(CultureInfo.InvariantCulture, $"{x:F1},{y:F1} ");
+                float x = padLeft + (timeSpan > 0 ? (float)((point.Time - points.First().Time).TotalSeconds / timeSpan) * chartW : 0);
+                polyPoints.Append(CultureInfo.InvariantCulture, $"{x:F2},{getY(point.Value):F2} ");
             }
-
-            // Ensure polyline has at least two points to avoid SVG rendering failure
-            if (stepIdx == 1)
-            {
-                float x2 = padLeft + chartW;
-                float y2 = getY(points[0].Value);
-                polyPoints.Append(CultureInfo.InvariantCulture, $"{x2:F1},{y2:F1} ");
-            }
+            if (points.Count == 1)
+                polyPoints.Append(CultureInfo.InvariantCulture, $"{padLeft + chartW:F2},{getY(points[0].Value):F2}");
 
             float thresholdY = getY(sig.DesignMax);
 
