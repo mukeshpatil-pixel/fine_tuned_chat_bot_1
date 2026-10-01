@@ -120,3 +120,14 @@ docker-compose.override.yml
 **/storage/*.pdf
 **/storage/temp/
 *.zip
+
+# ==========================================
+# Python Cache
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.venv/
+env/
+venv/
