@@ -405,7 +405,13 @@ public class IntentExtractionStep : IChatStep
                                        trimmed.Contains("report", StringComparison.OrdinalIgnoreCase) ||
                                        trimmed.Contains("suggest", StringComparison.OrdinalIgnoreCase);
 
-                if (!state.IsOnTopic && (mentionsCatalogAsset || asksAboutAssets))
+                bool providesTimeOrData = !string.IsNullOrWhiteSpace(fastTimeRange) ||
+                                          !string.IsNullOrWhiteSpace(fastFrom) ||
+                                          hasDomainHint ||
+                                          !string.IsNullOrWhiteSpace(result.ExtractedParameters?.TimeRange) ||
+                                          !string.IsNullOrWhiteSpace(result.ExtractedParameters?.FromDate);
+
+                if (!state.IsOnTopic && (mentionsCatalogAsset || asksAboutAssets || providesTimeOrData))
                 {
                     state.IsOnTopic = true;
                 }
