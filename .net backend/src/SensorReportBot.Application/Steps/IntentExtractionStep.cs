@@ -54,6 +54,8 @@ public class IntentExtractionStep : IChatStep
             // ========================================================
             // 1. Greetings & Catalog inquiries
             if (lower == "hi" || lower == "hello" || lower == "hey" || lower == "help" || lower == "start" || 
+                lower.StartsWith("hi ") || lower.StartsWith("hello ") || lower.StartsWith("hey ") || 
+                lower.StartsWith("good morning") || lower.StartsWith("good afternoon") || lower.StartsWith("good evening") ||
                 lower == "i want report" || lower == "i want a report" || lower == "what machines are there?" || lower == "machines" || lower == "assets")
             {
                 state.IsOnTopic = true;
@@ -68,13 +70,37 @@ public class IntentExtractionStep : IChatStep
             if (lower.Contains("change asset") || lower.Contains("change machine") || lower.Contains("switch asset") || 
                 lower.Contains("switch machine") || lower.Contains("different asset") || lower.Contains("different machine") || 
                 lower.Contains("another asset") || lower.Contains("another machine") || lower.Contains("choose another") ||
+                lower.Contains("change to") || lower.Contains("switch to") ||
                 lower.Contains("change the settings") || lower.Contains("change settings") || lower.Contains("change options") || 
                 lower == "reset" || lower == "start over" || lower == "clear")
             {
                 state.IsOnTopic = true;
-                state.IsComplete = false;
                 if (explicitAsset != null)
                 {
+                    string? carryTime = state.PreviousParameters?.TimeRange;
+                    string? carryFrom = state.PreviousParameters?.FromDate;
+                    string? carryTo = state.PreviousParameters?.ToDate;
+
+                    if (!string.IsNullOrWhiteSpace(carryTime) || !string.IsNullOrWhiteSpace(carryFrom))
+                    {
+                        state.IsComplete = true;
+                        state.ExtractedParameters = new ExtractedReportParametersDto
+                        {
+                            AssetId = explicitAsset.AssetId,
+                            AssetName = explicitAsset.Name,
+                            TimeRange = carryTime,
+                            FromDate = carryFrom,
+                            ToDate = carryTo,
+                            Mode = "raw"
+                        };
+                        state.SuggestedAction = "confirm_queue";
+                        state.SuggestedOptions = new List<string> { "Yes, Queue PDF Report", "Change Options" };
+                        string display = carryTime ?? $"{carryFrom} to {carryTo}";
+                        state.Reply = $"Got it — switched machine to {explicitAsset.Name} covering {display}. Would you like me to queue and generate this PDF report now?";
+                        return;
+                    }
+
+                    state.IsComplete = false;
                     state.ExtractedParameters = new ExtractedReportParametersDto
                     {
                         AssetId = explicitAsset.AssetId,
@@ -85,6 +111,7 @@ public class IntentExtractionStep : IChatStep
                 }
                 else
                 {
+                    state.IsComplete = false;
                     state.ExtractedParameters = new ExtractedReportParametersDto();
                     state.SuggestedAction = "select_asset";
                     state.SuggestedOptions = assets.Select(a => a.Name).ToList();
@@ -206,7 +233,13 @@ public class IntentExtractionStep : IChatStep
             }
 
             // 3a. User specified a Timeframe FIRST (before selecting an asset) e.g. "Last week data", "24h"
-            if (explicitAsset == null && (state.PreviousParameters?.AssetId == null || state.PreviousParameters.AssetId <= 0) && !string.IsNullOrWhiteSpace(fastTimeRange))
+            int wordCount = trimmed.Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).Length;
+            bool isShortTimeframePhrase = wordCount <= 5;
+            if (explicitAsset == null && 
+                (state.PreviousParameters?.AssetId == null || state.PreviousParameters.AssetId <= 0) && 
+                !string.IsNullOrWhiteSpace(fastTimeRange) &&
+                !HasOffTopicHint(lower) &&
+                (isShortTimeframePhrase || HasDomainHint(lower)))
             {
                 state.IsOnTopic = true;
                 state.IsComplete = false;
@@ -353,10 +386,11 @@ public class IntentExtractionStep : IChatStep
             }
 
             bool hasDomainHint = HasDomainHint(lower);
+            bool hasOffTopicHint = HasOffTopicHint(lower);
             bool canUseTimeOnlyWithPreviousAsset = state.PreviousParameters?.AssetId.HasValue == true &&
                 state.PreviousParameters.AssetId > 0 &&
                 (!string.IsNullOrWhiteSpace(fastTimeRange) || !string.IsNullOrWhiteSpace(fastFrom));
-            if (!hasDomainHint && !canUseTimeOnlyWithPreviousAsset)
+            if (hasOffTopicHint || (!hasDomainHint && !canUseTimeOnlyWithPreviousAsset))
             {
                 state.IsOnTopic = false;
                 state.IsComplete = false;
@@ -654,6 +688,21 @@ public class IntentExtractionStep : IChatStep
         };
 
         return hints.Any(lowerText.Contains);
+    }
+
+    private static bool HasOffTopicHint(string lowerText)
+    {
+        if (string.IsNullOrWhiteSpace(lowerText)) return false;
+
+        string[] offTopics =
+        {
+            "cricket", "football", "soccer", "match", "game", "score", "scores", "weather", "temperature outside",
+            "rain", "forecast", "president", "election", "politics", "movie", "song", "actor",
+            "joke", "riddle", "recipe", "cook", "capital of", "who is", "who won", "write code",
+            "how to hack", "love", "dating", "stock price", "bitcoin", "crypto"
+        };
+
+        return offTopics.Any(lowerText.Contains);
     }
 
     private static string? TryExtractTimeRange(string text)
