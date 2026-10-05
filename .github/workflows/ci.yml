@@ -29,11 +29,8 @@ jobs:
       - name: Build Solution (Release)
         run: dotnet build ".net backend/SensorReportBot.sln" --configuration Release --no-restore
 
-      - name: Code Formatting & Style Linting
-        run: |
-          dotnet format ".net backend/SensorReportBot.sln" --verify-no-changes --verbosity normal || {
-            echo "::warning title=Formatting Check::Code formatting deviations found. Running auto-format..."
-          }
+      - name: Enforce .NET Code Formatting & Style (.editorconfig)
+        run: dotnet format ".net backend/SensorReportBot.sln" --verify-no-changes --verbosity normal
 
   # ========================================================
   # 2. React 19 Frontend Linting & Production Bundle Build
@@ -90,7 +87,7 @@ jobs:
 
       - name: Lint for Critical Code Defects (Flake8)
         run: |
-          flake8 . --count --select=E9,F63,F7,F82 --exclude=.git,__pycache__,node_modules,tmp,.venv --show-source --statistics
+          flake8 . --count --select=E9,F63,F7,F82 --exclude=.git,__pycache__,node_modules,tmp,.venv,".net backend" --show-source --statistics
 
   # ========================================================
   # 4. Docker Compose & Microservice Stack Verification

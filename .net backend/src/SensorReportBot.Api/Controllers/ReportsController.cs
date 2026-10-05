@@ -1,12 +1,17 @@
 namespace SensorReportBot.Api.Controllers;
 
 using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using SensorReportBot.Application.DTOs;
 using SensorReportBot.Application.Interfaces;
 
+/// <summary>
+/// RESTful controller for querying industrial assets, sensor telemetry,
+/// and orchestrating asynchronous PDF generation jobs.
+/// </summary>
 [ApiController]
 [Route("api/[controller]")]
 public class ReportsController : ControllerBase
@@ -14,14 +19,24 @@ public class ReportsController : ControllerBase
     private readonly ITelemetryRepository _telemetryRepository;
     private readonly IPdfJobQueue _pdfJobQueue;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ReportsController"/> class.
+    /// </summary>
+    /// <param name="telemetryRepository">Repository for querying TimescaleDB telemetry and asset metadata.</param>
+    /// <param name="pdfJobQueue">Asynchronous queue provider for scheduling PDF generation workloads.</param>
     public ReportsController(
-        ITelemetryRepository telemetryRepository, 
+        ITelemetryRepository telemetryRepository,
         IPdfJobQueue pdfJobQueue)
     {
         _telemetryRepository = telemetryRepository;
         _pdfJobQueue = pdfJobQueue;
     }
 
+    /// <summary>
+    /// Retrieves all registered physical assets and machines in the plant catalog.
+    /// </summary>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>List of asset metadata objects.</returns>
     [HttpGet("assets")]
     public async Task<IActionResult> GetAssets(CancellationToken ct)
     {
@@ -29,6 +44,12 @@ public class ReportsController : ControllerBase
         return Ok(assets);
     }
 
+    /// <summary>
+    /// Retrieves all active telemetry sensor signals attached to a specific machine.
+    /// </summary>
+    /// <param name="assetId">Database primary key identifier for the asset.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>List of signal metadata definitions including units and physical descriptions.</returns>
     [HttpGet("assets/{assetId:int}/signals")]
     public async Task<IActionResult> GetSignals(int assetId, CancellationToken ct)
     {
@@ -36,6 +57,13 @@ public class ReportsController : ControllerBase
         return Ok(signals);
     }
 
+    /// <summary>
+    /// Computes and returns an inline JSON telemetry preview containing statistical
+    /// aggregates, operational anomalies, and vector trend series without generating a PDF.
+    /// </summary>
+    /// <param name="request">Report parameters specifying asset, signals, and temporal bounds.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Structured report dataset including metrics and sparkline data.</returns>
     [HttpPost("preview")]
     public async Task<IActionResult> GeneratePreview([FromBody] ReportRequestDto request, CancellationToken ct)
     {
@@ -48,10 +76,12 @@ public class ReportsController : ControllerBase
         return Ok(reportData);
     }
 
-    // ==========================================
-    // ASYNCHRONOUS PDF JOB QUEUE ENDPOINTS
-    // ==========================================
-
+    /// <summary>
+    /// Enqueues an asynchronous PDF report generation job to RabbitMQ / Background Service.
+    /// </summary>
+    /// <param name="request">Report specifications including asset ID, signal IDs, and time bounds.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>202 Accepted status with the tracking Job ID.</returns>
     [HttpPost("queue")]
     public async Task<IActionResult> QueueReportGeneration([FromBody] ReportRequestDto request, CancellationToken ct)
     {
@@ -75,6 +105,10 @@ public class ReportsController : ControllerBase
         });
     }
 
+    /// <summary>
+    /// Lists all current and historical PDF generation jobs tracked by the server.
+    /// </summary>
+    /// <returns>List of background report jobs with their execution states.</returns>
     [HttpGet("jobs")]
     public async Task<IActionResult> GetAllJobs()
     {
@@ -82,6 +116,11 @@ public class ReportsController : ControllerBase
         return Ok(jobs);
     }
 
+    /// <summary>
+    /// Retrieves the current status, progress percentage, and timestamps of a specific PDF job.
+    /// </summary>
+    /// <param name="jobId">Unique identifier of the PDF job.</param>
+    /// <returns>Report job status DTO.</returns>
     [HttpGet("jobs/{jobId:guid}")]
     public async Task<IActionResult> GetJobStatus(Guid jobId)
     {
@@ -108,6 +147,11 @@ public class ReportsController : ControllerBase
         });
     }
 
+    /// <summary>
+    /// Requests cancellation of an in-flight or queued report generation job.
+    /// </summary>
+    /// <param name="jobId">Unique identifier of the PDF job to cancel.</param>
+    /// <returns>Cancellation confirmation status.</returns>
     [HttpDelete("jobs/{jobId:guid}")]
     public async Task<IActionResult> CancelJob(Guid jobId)
     {
@@ -126,6 +170,11 @@ public class ReportsController : ControllerBase
         return Ok(new { message = $"Job {jobId} has been cancelled successfully.", jobId, status = "Cancelled" });
     }
 
+    /// <summary>
+    /// Streams the rendered PDF binary document for a completed report job.
+    /// </summary>
+    /// <param name="jobId">Unique identifier of the completed PDF job.</param>
+    /// <returns>PDF file stream with application/pdf content type header.</returns>
     [HttpGet("jobs/{jobId:guid}/download")]
     public async Task<IActionResult> DownloadJobPdf(Guid jobId)
     {

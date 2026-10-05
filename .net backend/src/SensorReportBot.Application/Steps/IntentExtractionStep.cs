@@ -10,6 +10,11 @@ using SensorReportBot.Application.DTOs;
 using SensorReportBot.Application.Interfaces;
 using SensorReportBot.Domain.Entities;
 
+/// <summary>
+/// Hybrid Neuro-Symbolic intent extraction workflow step.
+/// Uses a sub-millisecond deterministic fast-path for UI controls, presets,
+/// and common commands, with fallback to an edge SLM (SmolLM2-135M) for unstructured natural language.
+/// </summary>
 public class IntentExtractionStep : IChatStep
 {
     private const string OffTopicReply = "Sorry, I can only assist with industrial sensor and asset reports.";
@@ -20,6 +25,14 @@ public class IntentExtractionStep : IChatStep
     private readonly IPdfJobQueue _pdfJobQueue;
     private readonly ILogger<IntentExtractionStep> _logger;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="IntentExtractionStep"/> class.
+    /// </summary>
+    /// <param name="llmService">Edge language model inference service.</param>
+    /// <param name="promptProvider">Prompt template provider.</param>
+    /// <param name="telemetryRepo">Telemetry and asset catalog repository.</param>
+    /// <param name="pdfJobQueue">Asynchronous PDF generation queue.</param>
+    /// <param name="logger">Logger instance.</param>
     public IntentExtractionStep(
         ILlmService llmService,
         IPromptProvider promptProvider,
@@ -34,6 +47,13 @@ public class IntentExtractionStep : IChatStep
         _logger = logger;
     }
 
+    /// <summary>
+    /// Evaluates the user query against fast-path patterns and domain guardrails,
+    /// falling back to edge SLM inference if required, and binds extracted parameters to the state.
+    /// </summary>
+    /// <param name="state">Shared conversational request state.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task representing the intent extraction execution.</returns>
     public async Task RunAsync(ChatRequestState state, CancellationToken ct)
     {
         AssetDto? explicitAsset = null;
@@ -53,8 +73,8 @@ public class IntentExtractionStep : IChatStep
             // FAST-PATH: Sub-millisecond instant execution for edge UI
             // ========================================================
             // 1. Greetings & Catalog inquiries
-            if (lower == "hi" || lower == "hello" || lower == "hey" || lower == "help" || lower == "start" || 
-                lower.StartsWith("hi ") || lower.StartsWith("hello ") || lower.StartsWith("hey ") || 
+            if (lower == "hi" || lower == "hello" || lower == "hey" || lower == "help" || lower == "start" ||
+                lower.StartsWith("hi ") || lower.StartsWith("hello ") || lower.StartsWith("hey ") ||
                 lower.StartsWith("good morning") || lower.StartsWith("good afternoon") || lower.StartsWith("good evening") ||
                 lower == "i want report" || lower == "i want a report" || lower == "what machines are there?" || lower == "machines" || lower == "assets")
             {
@@ -67,8 +87,8 @@ public class IntentExtractionStep : IChatStep
             }
 
             // 1b. Change Asset / Switch Machine / Rejections & Another Report
-            if (lower.Contains("change asset") || lower.Contains("change machine") || lower.Contains("switch asset") || 
-                lower.Contains("switch machine") || lower.Contains("different asset") || lower.Contains("different machine") || 
+            if (lower.Contains("change asset") || lower.Contains("change machine") || lower.Contains("switch asset") ||
+                lower.Contains("switch machine") || lower.Contains("different asset") || lower.Contains("different machine") ||
                 lower.Contains("another asset") || lower.Contains("another machine") || lower.Contains("choose another") ||
                 lower.Contains("change to") || lower.Contains("switch to") ||
                 lower.Contains("another report") || lower.Contains("different report") || lower.Contains("new report") ||
@@ -77,7 +97,7 @@ public class IntentExtractionStep : IChatStep
                 lower.Contains("no not this") || lower.Contains("no, not this") ||
                 lower == "no" || lower.StartsWith("no,") || lower.StartsWith("no ") || lower == "nope" ||
                 lower == "cancel" || lower == "stop" ||
-                lower.Contains("change the settings") || lower.Contains("change settings") || lower.Contains("change options") || 
+                lower.Contains("change the settings") || lower.Contains("change settings") || lower.Contains("change options") ||
                 lower == "reset" || lower == "start over" || lower == "clear")
             {
                 state.IsOnTopic = true;
@@ -127,7 +147,7 @@ public class IntentExtractionStep : IChatStep
             }
 
             // 1c. Change Timeframe / Dates
-            if (lower.Contains("change timeframe") || lower.Contains("change time") || lower.Contains("change date") || 
+            if (lower.Contains("change timeframe") || lower.Contains("change time") || lower.Contains("change date") ||
                 lower.Contains("different timeframe") || lower.Contains("different time") || lower.Contains("new timeframe"))
             {
                 string? inlineTime = TryExtractTimeRange(lower);
@@ -241,8 +261,8 @@ public class IntentExtractionStep : IChatStep
             // 3a. User specified a Timeframe FIRST (before selecting an asset) e.g. "Last week data", "24h"
             int wordCount = trimmed.Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).Length;
             bool isShortTimeframePhrase = wordCount <= 5;
-            if (explicitAsset == null && 
-                (state.PreviousParameters?.AssetId == null || state.PreviousParameters.AssetId <= 0) && 
+            if (explicitAsset == null &&
+                (state.PreviousParameters?.AssetId == null || state.PreviousParameters.AssetId <= 0) &&
                 !string.IsNullOrWhiteSpace(fastTimeRange) &&
                 !HasOffTopicHint(lower) &&
                 (isShortTimeframePhrase || HasDomainHint(lower)))
@@ -300,10 +320,10 @@ public class IntentExtractionStep : IChatStep
             bool isNegative = lower == "no" || lower == "nope" || lower == "cancel" || lower == "stop" ||
                               lower.Contains("do not") || lower.Contains("don't") || lower.Contains("not now") ||
                               lower.Contains("dont");
-            bool isConfirm = lower.Contains("yes, queue") || lower.Contains("yes please") || lower == "yes" || 
-                             lower.Contains("queue") || lower.Contains("generate") || lower.Contains("lets do it") || 
-                             lower.Contains("let's do it") || lower.Contains("do it") || lower.Contains("proceed") || 
-                             lower.Contains("go ahead") || lower.Contains("confirm") || lower == "sure" || 
+            bool isConfirm = lower.Contains("yes, queue") || lower.Contains("yes please") || lower == "yes" ||
+                             lower.Contains("queue") || lower.Contains("generate") || lower.Contains("lets do it") ||
+                             lower.Contains("let's do it") || lower.Contains("do it") || lower.Contains("proceed") ||
+                             lower.Contains("go ahead") || lower.Contains("confirm") || lower == "sure" ||
                              lower == "ok" || lower == "okay";
 
             if (isNegative)
@@ -323,7 +343,9 @@ public class IntentExtractionStep : IChatStep
                 {
                     state.ExtractedParameters = new ExtractedReportParametersDto
                     {
-                        AssetId = explicitAsset.AssetId, AssetName = explicitAsset.Name, Mode = "raw"
+                        AssetId = explicitAsset.AssetId,
+                        AssetName = explicitAsset.Name,
+                        Mode = "raw"
                     };
                     AskForTimeframe(state);
                     return;
@@ -430,7 +452,7 @@ public class IntentExtractionStep : IChatStep
                 state.SuggestedOptions = result.SuggestedOptions ?? new List<string>();
 
                 // Guard against false off-topic refusals if user asked for assets or mentioned a catalog asset
-                bool mentionsCatalogAsset = assets.Any(a => 
+                bool mentionsCatalogAsset = assets.Any(a =>
                     trimmed.Contains(a.Name, StringComparison.OrdinalIgnoreCase) ||
                     a.Name.Contains(trimmed, StringComparison.OrdinalIgnoreCase) ||
                     trimmed.Contains("boiler", StringComparison.OrdinalIgnoreCase) ||
@@ -478,7 +500,7 @@ public class IntentExtractionStep : IChatStep
                 // 1. Resolve AssetId from database if LLM extracted AssetName or user mentioned asset
                 if (!string.IsNullOrWhiteSpace(state.ExtractedParameters.AssetName) && (!state.ExtractedParameters.AssetId.HasValue || state.ExtractedParameters.AssetId == 0))
                 {
-                    var matchedAsset = assets.FirstOrDefault(a => 
+                    var matchedAsset = assets.FirstOrDefault(a =>
                         a.Name.Equals(state.ExtractedParameters.AssetName, StringComparison.OrdinalIgnoreCase) ||
                         a.Name.Contains(state.ExtractedParameters.AssetName, StringComparison.OrdinalIgnoreCase) ||
                         state.ExtractedParameters.AssetName.Contains(a.Name, StringComparison.OrdinalIgnoreCase));
@@ -491,7 +513,7 @@ public class IntentExtractionStep : IChatStep
                 }
                 else if (mentionsCatalogAsset && (!state.ExtractedParameters.AssetId.HasValue || state.ExtractedParameters.AssetId == 0))
                 {
-                    var matchedAsset = assets.FirstOrDefault(a => 
+                    var matchedAsset = assets.FirstOrDefault(a =>
                         trimmed.Contains(a.Name, StringComparison.OrdinalIgnoreCase) ||
                         a.Name.Contains(trimmed, StringComparison.OrdinalIgnoreCase) ||
                         (trimmed.Contains("boiler", StringComparison.OrdinalIgnoreCase) && a.Name.Contains("Boiler", StringComparison.OrdinalIgnoreCase)) ||
@@ -613,7 +635,9 @@ public class IntentExtractionStep : IChatStep
                 {
                     state.ExtractedParameters = new ExtractedReportParametersDto
                     {
-                        AssetId = explicitAsset.AssetId, AssetName = explicitAsset.Name, Mode = "raw"
+                        AssetId = explicitAsset.AssetId,
+                        AssetName = explicitAsset.Name,
+                        Mode = "raw"
                     };
                     AskForTimeframe(state);
                     return;
@@ -633,7 +657,9 @@ public class IntentExtractionStep : IChatStep
             {
                 state.ExtractedParameters = new ExtractedReportParametersDto
                 {
-                    AssetId = explicitAsset.AssetId, AssetName = explicitAsset.Name, Mode = "raw"
+                    AssetId = explicitAsset.AssetId,
+                    AssetName = explicitAsset.Name,
+                    Mode = "raw"
                 };
                 AskForTimeframe(state);
                 return;
@@ -763,8 +789,8 @@ public class IntentExtractionStep : IChatStep
             string? d2 = matchRange.Groups[2].Success ? matchRange.Groups[2].Value : null;
 
             string fromIso = DateTime.TryParse(d1, out var dt1) ? dt1.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ") : $"{d1}T00:00:00Z";
-            string toIso = !string.IsNullOrWhiteSpace(d2) && DateTime.TryParse(d2, out var dt2) 
-                ? dt2.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ") 
+            string toIso = !string.IsNullOrWhiteSpace(d2) && DateTime.TryParse(d2, out var dt2)
+                ? dt2.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
                 : DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
 
             return (fromIso, toIso);

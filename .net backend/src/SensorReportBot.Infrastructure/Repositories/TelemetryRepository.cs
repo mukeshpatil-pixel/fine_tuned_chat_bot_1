@@ -106,10 +106,11 @@ public class TelemetryRepository : ITelemetryRepository
               AND time <= @ToTime 
             ORDER BY signal_id, time ASC;";
 
-        var rawRows = (await conn.QueryAsync<RawTelemetryRow>(rawDataSql, new { 
-            SignalIds = signalIds, 
-            FromTime = fromTime, 
-            ToTime = toTime 
+        var rawRows = (await conn.QueryAsync<RawTelemetryRow>(rawDataSql, new
+        {
+            SignalIds = signalIds,
+            FromTime = fromTime,
+            ToTime = toTime
         })).ToList();
 
         // 4. Overall statistics per signal from the raw dataset
@@ -124,12 +125,13 @@ public class TelemetryRepository : ITelemetryRepository
             WHERE signal_id = ANY(@SignalIds) AND time >= @FromTime AND time <= @ToTime
             GROUP BY signal_id;";
 
-        var statsDict = (await conn.QueryAsync(statsSql, new { 
-            SignalIds = signalIds, 
-            FromTime = fromTime, 
-            ToTime = toTime 
+        var statsDict = (await conn.QueryAsync(statsSql, new
+        {
+            SignalIds = signalIds,
+            FromTime = fromTime,
+            ToTime = toTime
         })).ToDictionary(
-            r => (int)r.signalid, 
+            r => (int)r.signalid,
             r => (Avg: (double)r.avgvalue, Min: (double)r.lowestvalue, Max: (double)r.peakvalue, Count: (int)(long)r.totalcount)
         );
 

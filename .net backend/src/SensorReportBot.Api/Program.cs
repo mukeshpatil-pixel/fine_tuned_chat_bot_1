@@ -64,7 +64,7 @@ app.UseAuthorization();
 app.MapControllers();
 app.MapHub<SensorReportBot.Api.Hubs.ChatHub>("/hubs/chat", options =>
 {
-    options.Transports = Microsoft.AspNetCore.Http.Connections.HttpTransportType.WebSockets | 
+    options.Transports = Microsoft.AspNetCore.Http.Connections.HttpTransportType.WebSockets |
                          Microsoft.AspNetCore.Http.Connections.HttpTransportType.LongPolling;
 }).RequireCors("AllowReactDev");
 app.MapHealthChecks("/health");

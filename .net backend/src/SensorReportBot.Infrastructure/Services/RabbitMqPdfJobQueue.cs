@@ -232,7 +232,7 @@ public class RabbitMqPdfJobQueue : IPdfJobQueue, IAsyncDisposable
                 job.Status = ReportJobStatus.Cancelled;
                 job.StatusMessage = "Job cancelled by user request.";
                 job.CompletedAt = DateTime.UtcNow;
-                
+
                 if (!string.IsNullOrEmpty(job.FilePath) && System.IO.File.Exists(job.FilePath))
                 {
                     try { System.IO.File.Delete(job.FilePath); } catch { }

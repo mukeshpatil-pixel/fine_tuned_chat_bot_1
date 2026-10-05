@@ -15,8 +15,8 @@ public class ReportJobDto
     public DateTime CreatedAt { get; set; }
     public DateTime? StartedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
-    public double? DurationSeconds => CompletedAt.HasValue && StartedAt.HasValue 
-        ? (CompletedAt.Value - StartedAt.Value).TotalSeconds 
+    public double? DurationSeconds => CompletedAt.HasValue && StartedAt.HasValue
+        ? (CompletedAt.Value - StartedAt.Value).TotalSeconds
         : null;
     public string? ErrorMessage { get; set; }
     public long? FileSizeBytes { get; set; }

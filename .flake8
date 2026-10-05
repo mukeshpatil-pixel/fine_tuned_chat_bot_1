@@ -1,0 +1,17 @@
+[flake8]
+max-line-length = 88
+extend-ignore = E203, W503
+exclude =
+    .git,
+    __pycache__,
+    build,
+    dist,
+    node_modules,
+    .venv,
+    venv,
+    tmp,
+    .net backend,
+    react-frontend
+count = True
+show-source = True
+statistics = True

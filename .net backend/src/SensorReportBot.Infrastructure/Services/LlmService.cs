@@ -1,5 +1,6 @@
 namespace SensorReportBot.Infrastructure.Services;
 
+using System;
 using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Json;
@@ -12,12 +13,22 @@ using Microsoft.Extensions.Options;
 using SensorReportBot.Application.Interfaces;
 using SensorReportBot.Infrastructure.Configuration;
 
+/// <summary>
+/// Infrastructure service for executing OpenAI-compatible HTTP inference queries against
+/// Ollama or external LLM gateways, parsing JSON outputs, and handling edge model fallbacks.
+/// </summary>
 public class LlmService : ILlmService
 {
     private readonly HttpClient _httpClient;
     private readonly LlmOptions _options;
     private readonly ILogger<LlmService> _logger;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="LlmService"/> class.
+    /// </summary>
+    /// <param name="httpClient">Configured HTTP client instance.</param>
+    /// <param name="options">Inference options specifying endpoint, model, and hyperparameters.</param>
+    /// <param name="logger">Logger instance.</param>
     public LlmService(HttpClient httpClient, IOptions<LlmOptions> options, ILogger<LlmService> logger)
     {
         _httpClient = httpClient;
@@ -25,6 +36,14 @@ public class LlmService : ILlmService
         _logger = logger;
     }
 
+    /// <summary>
+    /// Sends a structured chat completion request to the LLM backend and deserializes the JSON response.
+    /// </summary>
+    /// <typeparam name="TResponse">Expected target response type.</typeparam>
+    /// <param name="systemPrompt">Grounding instructions defining taxonomy, schema, and behavioral boundaries.</param>
+    /// <param name="userMessage">Context string containing state, user query, and temporal anchors.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Deserialized response object, or default/null if generation was unparseable.</returns>
     public async Task<TResponse?> GenerateJsonResponseAsync<TResponse>(string systemPrompt, string userMessage, CancellationToken ct = default)
     {
         _logger.LogDebug("\n==================== [LLM REQUEST LOG] ====================\n[SYSTEM PROMPT]:\n{SystemPrompt}\n-----------------------------------------------------------\n[USER PROMPT]:\n{UserMessage}\n===========================================================", systemPrompt, userMessage);
@@ -43,7 +62,7 @@ public class LlmService : ILlmService
         };
 
         string endpointUrl = _options.Endpoint;
-        if (!endpointUrl.EndsWith("/chat/completions", System.StringComparison.OrdinalIgnoreCase))
+        if (!endpointUrl.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase))
         {
             endpointUrl = endpointUrl.TrimEnd('/') + "/chat/completions";
         }
@@ -60,10 +79,7 @@ public class LlmService : ILlmService
         {
             string errorBody = await response.Content.ReadAsStringAsync(ct);
 
-            // Groq returns HTTP 400 with code=json_validate_failed when the model produces
-            // an empty completion (e.g. for short casual messages like "how are you?").
-            // In this case, return null so the caller can apply its own graceful fallback
-            // instead of crashing the entire request pipeline.
+            // Groq or local Ollama may return HTTP 400 when empty generation occurs.
             if ((int)response.StatusCode == 400 && errorBody.Contains("json_validate_failed"))
             {
                 _logger.LogWarning("LLM returned json_validate_failed (empty generation). Returning null for graceful fallback. Body: {Body}", errorBody);
@@ -71,19 +87,22 @@ public class LlmService : ILlmService
             }
 
             _logger.LogError("LLM request failed with status {StatusCode}: {ResponseBody}", response.StatusCode, errorBody);
-            response.EnsureSuccessStatusCode(); // re-throws for all other non-200 errors
+            response.EnsureSuccessStatusCode();
         }
 
         var chatResponse = await response.Content.ReadFromJsonAsync<ChatCompletionsResponse>(cancellationToken: ct);
         string? rawContent = chatResponse?.Choices?.FirstOrDefault()?.Message?.Content;
 
-        if (string.IsNullOrWhiteSpace(rawContent)) return default;
+        if (string.IsNullOrWhiteSpace(rawContent))
+        {
+            return default;
+        }
 
         string cleanJson = CleanJson(rawContent);
         try
         {
-            var options = new JsonSerializerOptions 
-            { 
+            var options = new JsonSerializerOptions
+            {
                 PropertyNameCaseInsensitive = true,
                 AllowTrailingCommas = true,
                 ReadCommentHandling = JsonCommentHandling.Skip
@@ -101,10 +120,10 @@ public class LlmService : ILlmService
                 try
                 {
                     string repairedJson = rawContent.Substring(firstBrace, lastBrace - firstBrace + 1);
-                    return JsonSerializer.Deserialize<TResponse>(repairedJson, new JsonSerializerOptions 
-                    { 
-                        PropertyNameCaseInsensitive = true, 
-                        AllowTrailingCommas = true 
+                    return JsonSerializer.Deserialize<TResponse>(repairedJson, new JsonSerializerOptions
+                    {
+                        PropertyNameCaseInsensitive = true,
+                        AllowTrailingCommas = true
                     });
                 }
                 catch
@@ -116,17 +135,33 @@ public class LlmService : ILlmService
         }
     }
 
+    /// <summary>
+    /// Strips markdown code blocks, backticks, and whitespace wrapping from LLM generated JSON strings.
+    /// </summary>
+    /// <param name="raw">Raw string output from language model.</param>
+    /// <returns>Cleaned JSON substring.</returns>
     private static string CleanJson(string raw)
     {
-        if (string.IsNullOrWhiteSpace(raw)) return "{}";
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return "{}";
+        }
+
         string trimmed = raw.Trim();
         if (trimmed.StartsWith("```"))
         {
             int firstLineEnd = trimmed.IndexOf('\n');
-            if (firstLineEnd >= 0) trimmed = trimmed[(firstLineEnd + 1)..];
-            if (trimmed.EndsWith("```")) trimmed = trimmed[..^3];
+            if (firstLineEnd >= 0)
+            {
+                trimmed = trimmed[(firstLineEnd + 1)..];
+            }
+
+            if (trimmed.EndsWith("```"))
+            {
+                trimmed = trimmed[..^3];
+            }
         }
-        
+
         int start = trimmed.IndexOf('{');
         int end = trimmed.LastIndexOf('}');
         if (start >= 0 && end > start)
@@ -138,20 +173,38 @@ public class LlmService : ILlmService
     }
 }
 
+/// <summary>
+/// OpenAI-compatible chat completion response payload model.
+/// </summary>
 public class ChatCompletionsResponse
 {
+    /// <summary>
+    /// Gets or sets the list of completion choices returned by the model.
+    /// </summary>
     [JsonPropertyName("choices")]
     public ChatChoice[]? Choices { get; set; }
 }
 
+/// <summary>
+/// Choice item in a completion response.
+/// </summary>
 public class ChatChoice
 {
+    /// <summary>
+    /// Gets or sets the message generated by the model.
+    /// </summary>
     [JsonPropertyName("message")]
     public ChatMessageContent? Message { get; set; }
 }
 
+/// <summary>
+/// Content payload for a chat completion message.
+/// </summary>
 public class ChatMessageContent
 {
+    /// <summary>
+    /// Gets or sets the text content.
+    /// </summary>
     [JsonPropertyName("content")]
     public string? Content { get; set; }
 }

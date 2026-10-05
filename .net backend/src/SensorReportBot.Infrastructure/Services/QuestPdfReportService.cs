@@ -14,6 +14,11 @@ using QuestPDF.Infrastructure;
 using SensorReportBot.Application.DTOs;
 using SensorReportBot.Application.Interfaces;
 
+/// <summary>
+/// Industrial PDF generation engine powered by QuestPDF.
+/// Renders high-fidelity engineering reports featuring uncompressed multi-signal
+/// telemetry tables, statistical metric matrices, vector trend sparklines, and operational audit logs.
+/// </summary>
 public class QuestPdfReportService : IPdfReportService
 {
     static QuestPdfReportService()
@@ -23,6 +28,12 @@ public class QuestPdfReportService : IPdfReportService
         QuestPDF.Settings.ThrowOnMissingFontFamilies = false;
     }
 
+    /// <summary>
+    /// Generates complete PDF binary document bytes from structured telemetry report data.
+    /// </summary>
+    /// <param name="data">Comprehensive report dataset containing sensor signals, telemetry points, and events.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task returning raw PDF document bytes.</returns>
     public Task<byte[]> GeneratePdfAsync(ReportDataDto data, CancellationToken ct = default)
     {
         var document = Document.Create(container =>
@@ -179,7 +190,7 @@ public class QuestPdfReportService : IPdfReportService
             if (chartsToShow.Any())
             {
                 col.Item().PaddingTop(12).Text("SIGNAL TREND OVERVIEW (UNAGGREGATED PROFILES)").FontSize(10.5f).Bold().FontColor(Colors.Indigo.Darken2);
-                
+
                 for (int i = 0; i < chartsToShow.Count; i += 2)
                 {
                     int chartIdx = i;
@@ -217,39 +228,39 @@ public class QuestPdfReportService : IPdfReportService
             {
                 col.Item().ShowEntire().Column(section =>
                 {
-                section.Item().PaddingTop(12).Text($"EXCURSION EVENTS LOG (Asset-wide: {data.Events.Count} recorded; latest {Math.Min(6, data.Events.Count)} shown)").FontSize(10.5f).Bold().FontColor(Colors.Indigo.Darken2);
-                section.Item().PaddingTop(3).Table(table =>
-                {
-                    table.ColumnsDefinition(columns =>
+                    section.Item().PaddingTop(12).Text($"EXCURSION EVENTS LOG (Asset-wide: {data.Events.Count} recorded; latest {Math.Min(6, data.Events.Count)} shown)").FontSize(10.5f).Bold().FontColor(Colors.Indigo.Darken2);
+                    section.Item().PaddingTop(3).Table(table =>
                     {
-                        columns.RelativeColumn(3); // Signal
-                        columns.RelativeColumn(2); // Type
-                        columns.RelativeColumn(3); // Start Time
-                        columns.RelativeColumn(2); // Duration
-                        columns.RelativeColumn(2); // Peak Value
-                        columns.RelativeColumn(2); // Threshold
-                    });
+                        table.ColumnsDefinition(columns =>
+                        {
+                            columns.RelativeColumn(3); // Signal
+                            columns.RelativeColumn(2); // Type
+                            columns.RelativeColumn(3); // Start Time
+                            columns.RelativeColumn(2); // Duration
+                            columns.RelativeColumn(2); // Peak Value
+                            columns.RelativeColumn(2); // Threshold
+                        });
 
-                    table.Header(header =>
-                    {
-                        header.Cell().Background(Colors.Grey.Darken2).Padding(3).Text("Signal").Bold().FontSize(7.5f).FontColor(Colors.White);
-                        header.Cell().Background(Colors.Grey.Darken2).Padding(3).Text("Type").Bold().FontSize(7.5f).FontColor(Colors.White);
-                        header.Cell().Background(Colors.Grey.Darken2).Padding(3).Text("Start (UTC)").Bold().FontSize(7.5f).FontColor(Colors.White);
-                        header.Cell().Background(Colors.Grey.Darken2).Padding(3).Text("Duration").Bold().FontSize(7.5f).FontColor(Colors.White);
-                        header.Cell().Background(Colors.Grey.Darken2).Padding(3).Text("Peak").Bold().FontSize(7.5f).FontColor(Colors.White);
-                        header.Cell().Background(Colors.Grey.Darken2).Padding(3).Text("Limit").Bold().FontSize(7.5f).FontColor(Colors.White);
-                    });
+                        table.Header(header =>
+                        {
+                            header.Cell().Background(Colors.Grey.Darken2).Padding(3).Text("Signal").Bold().FontSize(7.5f).FontColor(Colors.White);
+                            header.Cell().Background(Colors.Grey.Darken2).Padding(3).Text("Type").Bold().FontSize(7.5f).FontColor(Colors.White);
+                            header.Cell().Background(Colors.Grey.Darken2).Padding(3).Text("Start (UTC)").Bold().FontSize(7.5f).FontColor(Colors.White);
+                            header.Cell().Background(Colors.Grey.Darken2).Padding(3).Text("Duration").Bold().FontSize(7.5f).FontColor(Colors.White);
+                            header.Cell().Background(Colors.Grey.Darken2).Padding(3).Text("Peak").Bold().FontSize(7.5f).FontColor(Colors.White);
+                            header.Cell().Background(Colors.Grey.Darken2).Padding(3).Text("Limit").Bold().FontSize(7.5f).FontColor(Colors.White);
+                        });
 
-                    foreach (var evt in data.Events.Take(6))
-                    {
-                        table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten3).Padding(3).Text(evt.SignalName).FontSize(7.5f);
-                        table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten3).Padding(3).Text(evt.EventType).FontSize(7.5f).Bold().FontColor(Colors.Red.Darken1);
-                        table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten3).Padding(3).Text(evt.StartTime.ToString("yyyy-MM-dd HH:mm")).FontSize(7.5f);
-                        table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten3).Padding(3).Text($"{evt.DurationMinutes:F1} m").FontSize(7.5f);
-                        table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten3).Padding(3).Text(evt.PeakValue?.ToString("F1") ?? "-").FontSize(7.5f);
-                        table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten3).Padding(3).Text(evt.Threshold?.ToString("F1") ?? "-").FontSize(7.5f);
-                    }
-                });
+                        foreach (var evt in data.Events.Take(6))
+                        {
+                            table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten3).Padding(3).Text(evt.SignalName).FontSize(7.5f);
+                            table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten3).Padding(3).Text(evt.EventType).FontSize(7.5f).Bold().FontColor(Colors.Red.Darken1);
+                            table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten3).Padding(3).Text(evt.StartTime.ToString("yyyy-MM-dd HH:mm")).FontSize(7.5f);
+                            table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten3).Padding(3).Text($"{evt.DurationMinutes:F1} m").FontSize(7.5f);
+                            table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten3).Padding(3).Text(evt.PeakValue?.ToString("F1") ?? "-").FontSize(7.5f);
+                            table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten3).Padding(3).Text(evt.Threshold?.ToString("F1") ?? "-").FontSize(7.5f);
+                        }
+                    });
                 });
             }
 
@@ -258,39 +269,39 @@ public class QuestPdfReportService : IPdfReportService
             {
                 col.Item().ShowEntire().Column(section =>
                 {
-                section.Item().PaddingTop(12).Text($"SYSTEM ALERTS AUDIT (Asset-wide: {data.Alerts.Count} recorded; latest {Math.Min(6, data.Alerts.Count)} shown)").FontSize(10.5f).Bold().FontColor(Colors.Indigo.Darken2);
-                section.Item().PaddingTop(3).Table(table =>
-                {
-                    table.ColumnsDefinition(columns =>
+                    section.Item().PaddingTop(12).Text($"SYSTEM ALERTS AUDIT (Asset-wide: {data.Alerts.Count} recorded; latest {Math.Min(6, data.Alerts.Count)} shown)").FontSize(10.5f).Bold().FontColor(Colors.Indigo.Darken2);
+                    section.Item().PaddingTop(3).Table(table =>
                     {
-                        columns.RelativeColumn(3); // Signal
-                        columns.RelativeColumn(2); // Severity
-                        columns.RelativeColumn(3); // Triggered At
-                        columns.RelativeColumn(2); // Trigger Value
-                        columns.RelativeColumn(2); // Threshold
-                        columns.RelativeColumn(2); // Status
-                    });
+                        table.ColumnsDefinition(columns =>
+                        {
+                            columns.RelativeColumn(3); // Signal
+                            columns.RelativeColumn(2); // Severity
+                            columns.RelativeColumn(3); // Triggered At
+                            columns.RelativeColumn(2); // Trigger Value
+                            columns.RelativeColumn(2); // Threshold
+                            columns.RelativeColumn(2); // Status
+                        });
 
-                    table.Header(header =>
-                    {
-                        header.Cell().Background(Colors.Grey.Darken2).Padding(3).Text("Signal").Bold().FontSize(7.5f).FontColor(Colors.White);
-                        header.Cell().Background(Colors.Grey.Darken2).Padding(3).Text("Severity").Bold().FontSize(7.5f).FontColor(Colors.White);
-                        header.Cell().Background(Colors.Grey.Darken2).Padding(3).Text("Triggered At").Bold().FontSize(7.5f).FontColor(Colors.White);
-                        header.Cell().Background(Colors.Grey.Darken2).Padding(3).Text("Trigger Val").Bold().FontSize(7.5f).FontColor(Colors.White);
-                        header.Cell().Background(Colors.Grey.Darken2).Padding(3).Text("Threshold").Bold().FontSize(7.5f).FontColor(Colors.White);
-                        header.Cell().Background(Colors.Grey.Darken2).Padding(3).Text("Status").Bold().FontSize(7.5f).FontColor(Colors.White);
-                    });
+                        table.Header(header =>
+                        {
+                            header.Cell().Background(Colors.Grey.Darken2).Padding(3).Text("Signal").Bold().FontSize(7.5f).FontColor(Colors.White);
+                            header.Cell().Background(Colors.Grey.Darken2).Padding(3).Text("Severity").Bold().FontSize(7.5f).FontColor(Colors.White);
+                            header.Cell().Background(Colors.Grey.Darken2).Padding(3).Text("Triggered At").Bold().FontSize(7.5f).FontColor(Colors.White);
+                            header.Cell().Background(Colors.Grey.Darken2).Padding(3).Text("Trigger Val").Bold().FontSize(7.5f).FontColor(Colors.White);
+                            header.Cell().Background(Colors.Grey.Darken2).Padding(3).Text("Threshold").Bold().FontSize(7.5f).FontColor(Colors.White);
+                            header.Cell().Background(Colors.Grey.Darken2).Padding(3).Text("Status").Bold().FontSize(7.5f).FontColor(Colors.White);
+                        });
 
-                    foreach (var al in data.Alerts.Take(6))
-                    {
-                        table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten3).Padding(3).Text(al.SignalName).FontSize(7.5f);
-                        table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten3).Padding(3).Text(al.Severity).FontSize(7.5f).Bold().FontColor(al.Severity.Equals("CRITICAL", StringComparison.OrdinalIgnoreCase) ? Colors.Red.Darken2 : Colors.Orange.Darken2);
-                        table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten3).Padding(3).Text(al.TriggeredAt.ToString("yyyy-MM-dd HH:mm")).FontSize(7.5f);
-                        table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten3).Padding(3).Text(al.TriggerValue.ToString("F1")).FontSize(7.5f);
-                        table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten3).Padding(3).Text(al.ThresholdValue.ToString("F1")).FontSize(7.5f);
-                        table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten3).Padding(3).Text(al.Status).FontSize(7.5f);
-                    }
-                });
+                        foreach (var al in data.Alerts.Take(6))
+                        {
+                            table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten3).Padding(3).Text(al.SignalName).FontSize(7.5f);
+                            table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten3).Padding(3).Text(al.Severity).FontSize(7.5f).Bold().FontColor(al.Severity.Equals("CRITICAL", StringComparison.OrdinalIgnoreCase) ? Colors.Red.Darken2 : Colors.Orange.Darken2);
+                            table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten3).Padding(3).Text(al.TriggeredAt.ToString("yyyy-MM-dd HH:mm")).FontSize(7.5f);
+                            table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten3).Padding(3).Text(al.TriggerValue.ToString("F1")).FontSize(7.5f);
+                            table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten3).Padding(3).Text(al.ThresholdValue.ToString("F1")).FontSize(7.5f);
+                            table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten3).Padding(3).Text(al.Status).FontSize(7.5f);
+                        }
+                    });
                 });
             }
 
