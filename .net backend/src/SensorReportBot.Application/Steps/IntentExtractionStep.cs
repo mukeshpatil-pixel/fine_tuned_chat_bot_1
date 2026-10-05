@@ -66,11 +66,17 @@ public class IntentExtractionStep : IChatStep
                 return;
             }
 
-            // 1b. Change Asset / Switch Machine
+            // 1b. Change Asset / Switch Machine / Rejections & Another Report
             if (lower.Contains("change asset") || lower.Contains("change machine") || lower.Contains("switch asset") || 
                 lower.Contains("switch machine") || lower.Contains("different asset") || lower.Contains("different machine") || 
                 lower.Contains("another asset") || lower.Contains("another machine") || lower.Contains("choose another") ||
                 lower.Contains("change to") || lower.Contains("switch to") ||
+                lower.Contains("another report") || lower.Contains("different report") || lower.Contains("new report") ||
+                lower.Contains("change report") || lower.Contains("not this") || lower.Contains("not now") ||
+                lower.Contains("dont queue") || lower.Contains("do not queue") || lower.Contains("no thanks") ||
+                lower.Contains("no not this") || lower.Contains("no, not this") ||
+                lower == "no" || lower.StartsWith("no,") || lower.StartsWith("no ") || lower == "nope" ||
+                lower == "cancel" || lower == "stop" ||
                 lower.Contains("change the settings") || lower.Contains("change settings") || lower.Contains("change options") || 
                 lower == "reset" || lower == "start over" || lower == "clear")
             {

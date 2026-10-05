@@ -24,6 +24,7 @@ Off-topic: sports, weather, news, jokes, general chat, coding, personal question
 
 Rules:
 - Prefer CURRENT_STATE when latest input omits asset or timeframe.
+- If user rejects, cancels, or asks for another/different report (e.g. "no", "not this", "cancel", "another report"), do not keep CURRENT_STATE. Reset asset/time to null and suggest select_asset.
 - If latest input names a different asset, use the new asset.
 - Normalize time to "24h" or "Xd". Weeks = days*7. Today/yesterday = "24h".
 - For dates, use fromDate/toDate as ISO UTC when clear.
